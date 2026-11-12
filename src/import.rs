@@ -1,6 +1,6 @@
-//! Загрузка списка участников из .txt / .csv.
+//! Loading the participant list from .txt / .csv.
 
-/// UTF-8 (с BOM или без), UTF-16 LE/BE с BOM, иначе Windows-1251 (так сохраняет Excel в русской Windows).
+/// UTF-8 (with or without BOM), UTF-16 LE/BE with BOM, otherwise Windows-1251 (what Excel saves on Russian Windows).
 pub fn decode(bytes: &[u8]) -> String {
     if let Some(rest) = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
         return String::from_utf8_lossy(rest).into_owned();
@@ -38,13 +38,15 @@ fn cp1251(b: u8) -> char {
         0xBA => 'є',
         0xAF => 'Ї',
         0xBF => 'ї',
+        0xA5 => 'Ґ',
+        0xB4 => 'ґ',
         0xB2 => 'І',
         0xB3 => 'і',
         _ => '?',
     }
 }
 
-/// В .txt — строка целиком, в .csv — первое непустое поле строки.
+/// In .txt the whole line, in .csv the first non-empty field of the line.
 pub fn parse(text: &str, csv: bool) -> Vec<String> {
     text.lines()
         .filter_map(|line| {

@@ -1,3 +1,4 @@
+use crate::theme::ThemeMode;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -10,23 +11,29 @@ pub enum View {
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct Config {
-    /// Участники, по одному на строку (как в поле ввода).
+    /// Participants, one per line (as in the input field).
     pub text: String,
-    /// Фраза в окне результата.
+    /// Phrase shown in the result dialog.
     pub prompt: String,
     pub remove_after: bool,
     pub confetti: bool,
     pub spin_secs: f32,
     pub view: View,
     pub history: Vec<String>,
-    /// Проверять обновления при запуске (NIMVORO).
+    /// Check for updates on startup (NIMVORO).
     pub check_updates: bool,
+    /// Interface language code (`en`, `ru`, `uk`); `None` until first resolved.
+    pub language: Option<String>,
+    pub theme: ThemeMode,
+    /// True when no config file existed yet (never saved).
+    #[serde(skip)]
+    pub fresh: bool,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
-            text: "Анна\nБорис\nВиктория\nГлеб\nДарья\nЕгор\nЖанна\nЗахар".into(),
+            text: String::new(),
             prompt: String::new(),
             remove_after: false,
             confetti: true,
@@ -34,6 +41,9 @@ impl Default for Config {
             view: View::Wheel,
             history: Vec::new(),
             check_updates: true,
+            language: None,
+            theme: ThemeMode::System,
+            fresh: false,
         }
     }
 }
@@ -44,10 +54,10 @@ fn path() -> Option<PathBuf> {
 
 impl Config {
     pub fn load() -> Self {
-        let mut cfg: Config = path()
-            .and_then(|p| std::fs::read_to_string(p).ok())
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default();
+        let text = path().and_then(|p| std::fs::read_to_string(p).ok());
+        let mut cfg: Config =
+            text.as_deref().and_then(|s| serde_json::from_str(s.trim_start_matches('\u{feff}')).ok()).unwrap_or_default();
+        cfg.fresh = text.is_none();
         cfg.spin_secs = cfg.spin_secs.clamp(2.0, 12.0);
         cfg
     }

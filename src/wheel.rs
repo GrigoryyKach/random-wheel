@@ -1,11 +1,11 @@
-//! Колесо: генератор случайных чисел, математика вращения и отрисовка.
+//! The wheel: random number generator, rotation maths and painting.
 
 use crate::theme::{self, Pal, hex, mix};
 use eframe::egui::{Align2, Color32, Mesh, Painter, Pos2, Shape, Stroke, epaint::TextShape, pos2, vec2};
 use std::f32::consts::{FRAC_PI_2, TAU};
 use std::hash::{BuildHasher, Hasher};
 
-/// Цвета секторов, как на референсе.
+/// Segment colours.
 pub const SEGMENTS: [Color32; 11] = [
     hex(0x6366f1),
     hex(0x8b5cf6),
@@ -20,7 +20,7 @@ pub const SEGMENTS: [Color32; 11] = [
     hex(0x3b82f6),
 ];
 
-/// Цвет сектора: соседние сектора (включая последний и первый) не совпадают.
+/// Segment colour: neighbouring segments (including last and first) never match.
 pub fn segment_color(i: usize, n: usize) -> Color32 {
     let k = SEGMENTS.len();
     let mut idx = i % k;
@@ -30,11 +30,11 @@ pub fn segment_color(i: usize, n: usize) -> Color32 {
     SEGMENTS[idx]
 }
 
-// ───────────────────────── случайность ─────────────────────────
+// ───────────────────────── randomness ─────────────────────────
 
-/// SplitMix64, засеянный временем и системной случайностью хешера.
-/// Победитель выбирается равновероятно до начала анимации;
-/// анимация лишь доводит колесо до выбранного сектора.
+/// SplitMix64 seeded with the time and the hasher's system randomness.
+/// The winner is chosen with equal probability before the animation starts;
+/// the animation only brings the wheel to the chosen segment.
 pub struct Rng(u64);
 
 impl Rng {
@@ -55,12 +55,12 @@ impl Rng {
         z ^ (z >> 31)
     }
 
-    /// Равномерно в [0, 1).
+    /// Uniform in [0, 1).
     pub fn f32(&mut self) -> f32 {
         (self.next_u64() >> 40) as f32 / (1u64 << 24) as f32
     }
 
-    /// Равномерно в [0, n) без смещения (метод Лемира с отбраковкой).
+    /// Uniform in [0, n) without modulo bias (Lemire's method with rejection).
     pub fn below(&mut self, n: usize) -> usize {
         let n = n as u64;
         let threshold = n.wrapping_neg() % n;
@@ -80,26 +80,26 @@ impl Rng {
     }
 }
 
-// ───────────────────────── вращение ─────────────────────────
+// ───────────────────────── rotation ─────────────────────────
 
-/// Плавное замедление к концу.
+/// Smooth slow-down towards the end.
 pub fn ease_out(t: f32) -> f32 {
     1.0 - (1.0 - t.clamp(0.0, 1.0)).powi(3)
 }
 
-/// Угол поворота (по модулю 2π), при котором указатель стоит на доле `frac` сектора `i`.
+/// Rotation angle (mod 2π) that puts the pointer at fraction `frac` of segment `i`.
 pub fn rotation_for(i: usize, frac: f32, n: usize) -> f32 {
     let s = TAU / n as f32;
     (-(i as f32 + frac) * s).rem_euclid(TAU)
 }
 
-// ───────────────────────── отрисовка ─────────────────────────
+// ───────────────────────── painting ─────────────────────────
 
 fn dir(a: f32) -> eframe::egui::Vec2 {
     vec2(a.cos(), a.sin())
 }
 
-/// Мягкое свечение вокруг колеса: кольцо с прозрачностью от `inner` к нулю.
+/// Soft glow around the wheel: a ring fading from `color` to transparent.
 fn glow(painter: &Painter, c: Pos2, r0: f32, r1: f32, color: Color32) {
     let mut mesh = Mesh::default();
     let steps = 96;
@@ -136,8 +136,10 @@ pub struct WheelState<'a> {
     pub entries: &'a [String],
     pub rot: f32,
     pub highlight: Option<usize>,
-    /// Отклонение указателя (рад), когда мимо него проходит граница сектора.
+    /// Pointer deflection (rad) while a segment border passes it.
     pub kick: f32,
+    /// Text shown on the empty wheel.
+    pub empty_text: &'a str,
 }
 
 pub fn paint(painter: &Painter, c: Pos2, r: f32, st: &WheelState, p: &Pal) {
@@ -148,7 +150,7 @@ pub fn paint(painter: &Painter, c: Pos2, r: f32, st: &WheelState, p: &Pal) {
     if n == 0 {
         painter.circle_filled(c, r, p.card);
         painter.circle_stroke(c, r, Stroke::new(1.0, p.line));
-        painter.text(c + vec2(0.0, r * 0.32), Align2::CENTER_CENTER, "Добавьте участников справа", theme::reg(15.0), p.muted);
+        painter.text(c + vec2(0.0, r * 0.32), Align2::CENTER_CENTER, st.empty_text, theme::reg(15.0), p.muted);
         paint_pointer(painter, c, r, 0.0, p);
         paint_hub(painter, c, r, p);
         return;
@@ -182,7 +184,7 @@ pub fn paint(painter: &Painter, c: Pos2, r: f32, st: &WheelState, p: &Pal) {
         }
     }
 
-    // Подписи: вдоль радиуса, прижаты к ободу.
+    // Labels: along the radius, pushed to the rim.
     let label_r = r * 0.9;
     let max_w = r * 0.66;
     let chord = 2.0 * (r * 0.62) * (s / 2.0).min(FRAC_PI_2).sin();
@@ -206,7 +208,7 @@ pub fn paint(painter: &Painter, c: Pos2, r: f32, st: &WheelState, p: &Pal) {
         }
     }
 
-    // Обводка победившего сектора.
+    // Outline of the winning segment.
     if let (Some(h), true) = (st.highlight, n > 1) {
         let a0 = start + h as f32 * s;
         let steps = ((s / TAU) * 220.0).ceil().max(2.0) as usize;

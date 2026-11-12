@@ -7,25 +7,14 @@ use eframe::egui::{
 };
 
 use crate::config::{Config, View};
-use crate::nimvoro::{UpdateState, Updater};
+use crate::i18n::{self, Lang};
+use crate::nimvoro::{self, UpdateState, Updater};
+use crate::strings::{self, S};
 use crate::theme::{self, Btn, Pal, Textures};
 use crate::wheel::{self, Rng, WheelState};
 
 pub fn parse_entries(text: &str) -> Vec<String> {
     text.lines().map(str::trim).filter(|l| !l.is_empty()).map(String::from).collect()
-}
-
-/// 1 участник, 2 участника, 5 участников.
-fn plural(n: usize, one: &str, few: &str, many: &str) -> String {
-    let (m10, m100) = (n % 10, n % 100);
-    let w = if m10 == 1 && m100 != 11 {
-        one
-    } else if (2..=4).contains(&m10) && !(12..=14).contains(&m100) {
-        few
-    } else {
-        many
-    };
-    format!("{n} {w}")
 }
 
 struct Spin {
@@ -57,6 +46,7 @@ struct Particle {
 
 pub struct App {
     cfg: Config,
+    lang: Lang,
     rot: f32,
     spin: Option<Spin>,
     outcome: Option<Outcome>,
@@ -73,8 +63,18 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(cc: &eframe::CreationContext<'_>, cfg: Config) -> Self {
-        theme::install(&cc.egui_ctx);
+    pub fn new(cc: &eframe::CreationContext<'_>, mut cfg: Config) -> Self {
+        theme::install(&cc.egui_ctx, cfg.theme);
+        // Starting language: config, then the launcher marker, then English; persisted for next time.
+        let lang = i18n::resolve(cfg.language.as_deref());
+        let mut dirty_since = None;
+        if cfg.language.as_deref() != Some(lang.code()) {
+            cfg.language = Some(lang.code().to_string());
+            dirty_since = Some(0.0);
+        }
+        if cfg.fresh && cfg.text.is_empty() {
+            cfg.text = strings::TABLE.get(lang).sample_names.to_string();
+        }
         let mut rng = Rng::new();
         let rot = rng.f32() * TAU;
         let updater = Updater::new("random-wheel", "GrigoryyKach/random-wheel", env!("CARGO_PKG_VERSION"));
@@ -84,6 +84,7 @@ impl App {
         }
         Self {
             cfg,
+            lang,
             rot,
             spin: None,
             outcome: None,
@@ -94,10 +95,14 @@ impl App {
             file_label: None,
             import_error: None,
             confetti: Vec::new(),
-            dirty_since: None,
+            dirty_since,
             focus_mode: false,
             updater,
         }
+    }
+
+    fn s(&self) -> &'static S {
+        strings::TABLE.get(self.lang)
     }
 
     fn touch(&mut self, ctx: &egui::Context) {
@@ -108,14 +113,14 @@ impl App {
         entries.len() >= 2 && self.spin.is_none() && self.outcome.is_none()
     }
 
-    // ───────────────────────── розыгрыш ─────────────────────────
+    // ───────────────────────── draw ─────────────────────────
 
     fn start_spin(&mut self, ctx: &egui::Context, entries: &[String]) {
         if !self.can_spin(entries) {
             return;
         }
         let n = entries.len();
-        // Победитель определяется здесь, равновероятно; анимация только доводит до него.
+        // The winner is decided here with equal probability; the animation only leads to it.
         let winner = self.rng.below(n);
         let frac = 0.15 + 0.7 * self.rng.f32();
         let from = self.rot.rem_euclid(TAU);
@@ -216,13 +221,13 @@ impl App {
         }
     }
 
-    // ───────────────────────── импорт ─────────────────────────
+    // ───────────────────────── import ─────────────────────────
 
     fn import_file(&mut self, ctx: &egui::Context) {
         let Some(path) = rfd::FileDialog::new()
-            .set_title("Загрузить список участников")
-            .add_filter("Списки (.txt, .csv)", &["txt", "csv"])
-            .add_filter("Все файлы", &["*"])
+            .set_title(self.s().dlg_title)
+            .add_filter(self.s().dlg_lists, &["txt", "csv"])
+            .add_filter(self.s().dlg_all, &["*"])
             .pick_file()
         else {
             return;
@@ -232,7 +237,7 @@ impl App {
                 let is_csv = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("csv"));
                 let names = crate::import::parse(&crate::import::decode(&bytes), is_csv);
                 if names.is_empty() {
-                    self.import_error = Some("В файле не нашлось ни одного имени".into());
+                    self.import_error = Some(self.s().err_no_names.into());
                 } else {
                     self.cfg.text = names.join("\n");
                     self.import_error = None;
@@ -241,7 +246,7 @@ impl App {
                 }
                 self.file_label = path.file_name().map(|n| n.to_string_lossy().into_owned());
             }
-            Err(e) => self.import_error = Some(format!("Не удалось прочитать файл: {e}")),
+            Err(e) => self.import_error = Some(format!("{}: {e}", self.s().err_read)),
         }
     }
 
@@ -261,7 +266,7 @@ impl App {
         self.touch(ctx);
     }
 
-    // ───────────────────────── конфетти ─────────────────────────
+    // ───────────────────────── confetti ─────────────────────────
 
     fn spawn_confetti(&mut self, screen: Rect) {
         for _ in 0..170 {
@@ -300,7 +305,7 @@ impl App {
         let painter = ctx.layer_painter(egui::LayerId::new(Order::Tooltip, Id::unique("confetti")));
         for p in &self.confetti {
             let (s, c) = p.rot.sin_cos();
-            // Сплющиваем по одной оси, чтобы казалось, что бумажка кувыркается.
+            // Squash along one axis so the paper seems to tumble.
             let flip = (p.rot * 1.7).cos().abs().max(0.15);
             let hx = vec2(c, s) * p.size.x / 2.0;
             let hy = vec2(-s, c) * p.size.y / 2.0 * flip;
@@ -309,18 +314,19 @@ impl App {
         }
     }
 
-    // ───────────────────────── главная область ─────────────────────────
+    // ───────────────────────── main area ─────────────────────────
 
     fn main_view(&mut self, ui: &mut Ui, p: &Pal, entries: &[String]) {
         let ctx = ui.ctx().clone();
+        let t = self.s();
         ui.vertical_centered(|ui| {
             ui.add_space(4.0);
-            ui.label(RichText::new("Колесо фортуны").font(theme::bold(28.0)).color(p.text));
+            ui.label(RichText::new(t.title).font(theme::bold(28.0)).color(p.text));
             ui.add_space(-4.0);
             let sub = if entries.is_empty() {
-                "Добавьте участников в панели справа".to_string()
+                t.add_hint.to_string()
             } else {
-                format!("{} в розыгрыше", plural(entries.len(), "участник", "участника", "участников"))
+                i18n::plural(self.lang, entries.len(), &t.in_draw)
             };
             ui.label(RichText::new(sub).font(theme::reg(14.0)).color(p.muted));
             ui.add_space(10.0);
@@ -338,13 +344,13 @@ impl App {
 
         let can = self.can_spin(entries);
         let label = if self.spin.is_some() {
-            "Крутится…"
+            t.spinning
         } else if entries.len() < 2 {
-            "Нужно минимум 2 участника"
+            t.need_two
         } else if self.cfg.view == View::List {
-            "Выбрать случайно"
+            t.pick_random
         } else {
-            "Крутить колесо"
+            t.spin_wheel
         };
         let bw = width.clamp(280.0, 540.0);
         let brect = Rect::from_center_size(pos2(avail.center().x, avail.max.y - btn_h / 2.0), vec2(bw, btn_h));
@@ -355,9 +361,10 @@ impl App {
         ui.allocate_rect(avail, Sense::hover());
     }
 
-    /// Переключатель «Список / Колесо» и кнопка полноэкранного режима.
+    /// The List / Wheel switch and the full-screen button.
     fn toolbar(&mut self, ui: &mut Ui, p: &Pal) {
-        let items = [(View::List, "Список", theme::icon_list as fn(_, _, _)), (View::Wheel, "Колесо", theme::icon_wheel)];
+        let t = self.s();
+        let items = [(View::List, t.list, theme::icon_list as fn(_, _, _)), (View::Wheel, t.wheel, theme::icon_wheel)];
         let font = theme::semi(13.5);
         let widths: Vec<f32> = items
             .iter()
@@ -394,7 +401,7 @@ impl App {
         }
 
         let fr = Rect::from_min_size(pos2(seg.right() + 8.0, rect.top()), Vec2::splat(h));
-        let tip = if self.focus_mode { "Выйти из полноэкранного режима (F11)" } else { "На весь экран (F11)" };
+        let tip = if self.focus_mode { t.exit_fullscreen } else { t.fullscreen };
         let resp = ui.interact(fr, Id::unique("fullscreen"), Sense::click()).on_hover_cursor(CursorIcon::PointingHand).on_hover_text(tip);
         if resp.hovered() {
             ui.painter().rect_filled(fr, 9.0, p.hover);
@@ -421,7 +428,7 @@ impl App {
             self.start_spin(&ctx, entries);
         }
 
-        // Указатель «цепляется» за границы секторов, пока колесо крутится.
+        // The pointer "catches" on segment borders while the wheel spins.
         let kick = match &self.spin {
             Some(sp) if sp.n <= 60 => {
                 let s = TAU / sp.n as f32;
@@ -430,7 +437,7 @@ impl App {
             }
             _ => 0.0,
         };
-        let st = WheelState { entries, rot: self.rot, highlight: self.highlight, kick };
+        let st = WheelState { entries, rot: self.rot, highlight: self.highlight, kick, empty_text: self.s().wheel_empty };
         wheel::paint(ui.painter(), c, r, &st, p);
         d
     }
@@ -447,7 +454,7 @@ impl App {
             for k in 0..4 {
                 child.painter().extend(Shape::dashed_line(&[c[k], c[k + 1]], stroke, 6.0, 4.0));
             }
-            child.painter().text(r.center(), Align2::CENTER_CENTER, "Список пуст. Добавьте участников в панели справа.", theme::reg(13.5), p.muted);
+            child.painter().text(r.center(), Align2::CENTER_CENTER, self.s().list_empty, theme::reg(13.5), p.muted);
             return w;
         }
 
@@ -487,20 +494,21 @@ impl App {
         w
     }
 
-    // ───────────────────────── панель настроек ─────────────────────────
+    // ───────────────────────── settings panel ─────────────────────────
 
     fn settings_panel(&mut self, ui: &mut Ui, p: &Pal, entries: &[String]) {
         let ctx = ui.ctx().clone();
+        let t = self.s();
         ScrollArea::vertical().auto_shrink([false; 2]).show(ui, |ui| {
             ui.set_width(ui.available_width() - 8.0);
 
-            // Заголовок панели, как бренд в Smart Switcher.
+            // Panel header, like the brand block in Smart Switcher.
             ui.horizontal(|ui| {
                 theme::logo(ui, 34.0, "⚙", &self.tex);
                 ui.add_space(4.0);
                 ui.vertical(|ui| {
                     ui.add_space(1.0);
-                    ui.label(RichText::new("Настройки").font(theme::semi(15.0)).color(p.text));
+                    ui.label(RichText::new(t.settings).font(theme::semi(15.0)).color(p.text));
                     ui.add_space(-8.0);
                     ui.label(RichText::new("Random Wheel").font(theme::reg(12.0)).color(p.muted));
                 });
@@ -508,9 +516,9 @@ impl App {
             ui.add_space(14.0);
             self.update_banner(ui, p, &ctx);
 
-            // ── Участники
+            // ── Participants
             ui.horizontal(|ui| {
-                theme::caps(ui, "Участники", p);
+                theme::caps(ui, t.participants, p);
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.label(RichText::new(entries.len().to_string()).font(theme::semi(12.0)).color(p.muted));
                 });
@@ -520,13 +528,13 @@ impl App {
             ui.add_space(6.0);
 
             ui.horizontal(|ui| {
-                if theme::button(ui, "Обзор…", Btn::Soft, p).clicked() && self.spin.is_none() {
+                if theme::button(ui, t.browse, Btn::Soft, p).clicked() && self.spin.is_none() {
                     self.import_file(&ctx);
                 }
                 ui.add_space(2.0);
                 let (txt, col) = match &self.file_label {
                     Some(f) => (f.as_str(), p.text),
-                    None => ("Файл не выбран", p.muted),
+                    None => (t.no_file, p.muted),
                 };
                 ui.add(egui::Label::new(RichText::new(txt).font(theme::reg(13.0)).color(col)).truncate());
             });
@@ -534,30 +542,26 @@ impl App {
                 ui.label(RichText::new(err).font(theme::reg(12.5)).color(theme::hex(0xe5484d)));
             }
             ui.horizontal(|ui| {
-                ui.label(RichText::new(".txt или .csv").font(theme::reg(12.5)).color(p.muted));
-                theme::button(ui, "Подробнее", Btn::Link, p).on_hover_text(
-                    "Каждая строка — один участник. В .csv берётся первый столбец \
-                     (разделители «,», «;» или табуляция). Кодировки: UTF-8, UTF-16, Windows-1251.",
-                );
+                ui.label(RichText::new(t.file_types).font(theme::reg(12.5)).color(p.muted));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let enabled = self.spin.is_none() && entries.len() > 1;
-                    if theme::button(ui, "А→Я", Btn::Link, p).on_hover_text("Отсортировать по алфавиту").clicked() && enabled {
+                    if theme::button(ui, t.sort_az, Btn::Link, p).on_hover_text(t.sort_tip).clicked() && enabled {
                         self.sort_entries(&ctx);
                     }
-                    if theme::button(ui, "Перемешать", Btn::Link, p).clicked() && enabled {
+                    if theme::button(ui, t.shuffle, Btn::Link, p).clicked() && enabled {
                         self.shuffle_entries(&ctx);
                     }
                 });
             });
 
-            // ── Розыгрыш
+            // ── Draw
             theme::divider(ui, p);
-            theme::caps(ui, "Настройка", p);
+            theme::caps(ui, t.draw, p);
             ui.add_space(2.0);
-            ui.label(RichText::new("Текст при победе").font(theme::reg(14.0)).color(p.text));
+            ui.label(RichText::new(t.win_text).font(theme::reg(14.0)).color(p.text));
             let r = ui.add(
                 TextEdit::singleline(&mut self.cfg.prompt)
-                    .hint_text("Например: 🎉 И победитель…")
+                    .hint_text(t.win_hint)
                     .desired_width(f32::INFINITY)
                     .margin(Margin::symmetric(12, 9))
                     .font(theme::reg(14.0)),
@@ -567,44 +571,44 @@ impl App {
             }
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Длительность вращения").font(theme::reg(14.0)).color(p.text));
+                ui.label(RichText::new(t.spin_duration).font(theme::reg(14.0)).color(p.text));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    theme::pill(ui, &format!("{} с", self.cfg.spin_secs as i32), p);
+                    theme::pill(ui, &t.seconds.replace("{n}", &(self.cfg.spin_secs as i32).to_string()), p);
                 });
             });
             if theme::slider(ui, &mut self.cfg.spin_secs, 2.0, 12.0, 1.0, p).changed() {
                 self.touch(&ctx);
             }
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Быстро").font(theme::reg(12.0)).color(p.muted));
+                ui.label(RichText::new(t.quick).font(theme::reg(12.0)).color(p.muted));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.label(RichText::new("С интригой").font(theme::reg(12.0)).color(p.muted));
+                    ui.label(RichText::new(t.suspense).font(theme::reg(12.0)).color(p.muted));
                 });
             });
 
-            // ── Поведение
+            // ── Behavior
             theme::divider(ui, p);
-            theme::caps(ui, "Поведение", p);
+            theme::caps(ui, t.behavior, p);
             ui.add_space(2.0);
             let mut remove = self.cfg.remove_after;
-            if switch_row(ui, p, "Удалять после выбора", "Победитель уберётся из списка, когда вы закроете окно результата", &mut remove) {
+            if switch_row(ui, p, t.remove_after, t.remove_after_hint, &mut remove) {
                 self.cfg.remove_after = remove;
                 self.touch(&ctx);
             }
             ui.add_space(6.0);
             let mut confetti = self.cfg.confetti;
-            if switch_row(ui, p, "Конфетти", "Праздничный салют при объявлении победителя", &mut confetti) {
+            if switch_row(ui, p, t.confetti, t.confetti_hint, &mut confetti) {
                 self.cfg.confetti = confetti;
                 self.touch(&ctx);
             }
 
-            // ── История
+            // ── History
             theme::divider(ui, p);
             ui.horizontal(|ui| {
-                theme::caps(ui, "История", p);
+                theme::caps(ui, t.history, p);
                 if !self.cfg.history.is_empty() {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if theme::button(ui, "очистить", Btn::Link, p).clicked() {
+                        if theme::button(ui, t.clear_history, Btn::Link, p).clicked() {
                             self.cfg.history.clear();
                             self.touch(&ctx);
                         }
@@ -613,7 +617,7 @@ impl App {
             });
             ui.add_space(2.0);
             if self.cfg.history.is_empty() {
-                theme::hint(ui, "Здесь появятся последние победители", p);
+                theme::hint(ui, t.history_empty, p);
             } else {
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
@@ -622,20 +626,39 @@ impl App {
                     }
                 });
             }
-            // ── Обновления
+            // ── Interface: language and theme
             theme::divider(ui, p);
-            theme::caps(ui, "Обновления", p);
+            theme::caps(ui, t.appearance, p);
+            ui.add_space(2.0);
+            let mut lang = self.lang;
+            if i18n::language_row(ui, &mut lang, p) {
+                self.lang = lang;
+                self.cfg.language = Some(lang.code().to_string());
+                self.touch(&ctx);
+            }
+            ui.add_space(4.0);
+            let mut mode = self.cfg.theme;
+            if i18n::theme_row(ui, &mut mode, self.lang, p) {
+                self.cfg.theme = mode;
+                theme::apply(&ctx, mode);
+                self.touch(&ctx);
+            }
+
+            // ── Updates
+            let u = nimvoro::strings(self.lang);
+            theme::divider(ui, p);
+            theme::caps(ui, u.updates, p);
             ui.add_space(2.0);
             let mut check = self.cfg.check_updates;
-            if switch_row(ui, p, "Проверять при запуске", "Узнавать о новых версиях на GitHub и обновляться через NIMVORO", &mut check) {
+            if switch_row(ui, p, u.check_on_start, u.check_on_start_hint, &mut check) {
                 self.cfg.check_updates = check;
                 self.touch(&ctx);
             }
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                theme::hint(ui, &self.updater.status_text(), p);
+                theme::hint(ui, &self.updater.status_text(self.lang), p);
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if !self.updater.is_checking() && theme::button(ui, "Проверить", Btn::Link, p).clicked() {
+                    if !self.updater.is_checking() && theme::button(ui, u.check_now, Btn::Link, p).clicked() {
                         let c = ctx.clone();
                         self.updater.check(move || c.request_repaint());
                     }
@@ -645,9 +668,10 @@ impl App {
         });
     }
 
-    /// Плашка «Доступна версия X» над настройками.
+    /// "Version X is available" banner above the settings.
     fn update_banner(&mut self, ui: &mut Ui, p: &Pal, ctx: &egui::Context) {
         let UpdateState::Available { version, .. } = self.updater.state() else { return };
+        let u = nimvoro::strings(self.lang);
         Frame::new()
             .fill(p.accent_soft)
             .corner_radius(10.0)
@@ -656,12 +680,12 @@ impl App {
                 ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
-                        ui.label(RichText::new(format!("Доступна версия {version}")).font(theme::semi(13.5)).color(p.text));
+                        ui.label(RichText::new(u.available.replace("{v}", &version)).font(theme::semi(13.5)).color(p.text));
                         ui.add_space(-6.0);
-                        theme::hint(ui, &format!("У вас {}", self.updater.current), p);
+                        theme::hint(ui, &u.you_have.replace("{v}", self.updater.current), p);
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if theme::button(ui, "Обновить", Btn::Soft, p).clicked() && self.updater.apply() {
+                        if theme::button(ui, u.update_btn, Btn::Soft, p).clicked() && self.updater.apply() {
                             self.cfg.save();
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                         }
@@ -671,9 +695,10 @@ impl App {
         ui.add_space(12.0);
     }
 
-    /// Многострочное поле участников с кнопкой «Очистить» в углу (как на референсе).
+    /// Multi-line participants field with a Clear button in the corner.
     fn entries_editor(&mut self, ui: &mut Ui, p: &Pal, ctx: &egui::Context) {
         let enabled = self.spin.is_none() && self.outcome.is_none();
+        let hint = self.s().entries_hint;
         let mut te_resp = None;
         let frame = Frame::new()
             .fill(p.bg)
@@ -687,7 +712,7 @@ impl App {
                         enabled,
                         TextEdit::multiline(&mut self.cfg.text)
                             .frame(Frame::NONE)
-                            .hint_text("Введите имена,\nпо одному на строку")
+                            .hint_text(hint)
                             .desired_width(f32::INFINITY)
                             .desired_rows(9)
                             .font(theme::reg(14.5)),
@@ -709,7 +734,7 @@ impl App {
         if !self.cfg.text.trim().is_empty() && enabled {
             let size = vec2(72.0, 24.0);
             let br = Rect::from_min_size(pos2(rect.right() - size.x - 14.0, rect.top() + 8.0), size);
-            if theme::button_at(ui, br, Id::unique("clear"), "Очистить", Btn::Small, p).clicked() {
+            if theme::button_at(ui, br, Id::unique("clear"), self.s().clear, Btn::Small, p).clicked() {
                 self.cfg.text.clear();
                 self.highlight = None;
                 self.file_label = None;
@@ -718,7 +743,7 @@ impl App {
         }
     }
 
-    // ───────────────────────── окно победителя ─────────────────────────
+    // ───────────────────────── winner dialog ─────────────────────────
 
     fn winner_modal(&mut self, ctx: &egui::Context, p: &Pal) {
         let Some(o) = &self.outcome else { return };
@@ -729,6 +754,7 @@ impl App {
             ctx.request_repaint();
         }
         let name = o.name.clone();
+        let t = self.s();
         let screen = ctx.content_rect();
 
         let dim = egui::Area::new(Id::unique("dim")).order(Order::Foreground).fixed_pos(screen.min).show(ctx, |ui| {
@@ -753,7 +779,7 @@ impl App {
                     .show(ui, |ui| {
                         ui.set_width(380.0);
                         ui.vertical_centered(|ui| {
-                            // Значок-медаль.
+                            // Medal badge.
                             let (r, _) = ui.allocate_exact_size(Vec2::splat(64.0), Sense::hover());
                             let painter = ui.painter();
                             painter.add(theme::shadow(6, 20, Color32::from_rgba_unmultiplied(95, 100, 255, 90)).as_shape(r, 32.0));
@@ -761,13 +787,13 @@ impl App {
                             painter.text(r.center(), Align2::CENTER_CENTER, "★", theme::bold(30.0), Color32::WHITE);
                             ui.add_space(10.0);
 
-                            let prompt = if self.cfg.prompt.trim().is_empty() { "И победитель…" } else { self.cfg.prompt.trim() };
+                            let prompt = if self.cfg.prompt.trim().is_empty() { t.winner_default } else { self.cfg.prompt.trim() };
                             ui.label(RichText::new(prompt).font(theme::reg(15.0)).color(p.muted));
                             ui.add_space(2.0);
                             ui.add(egui::Label::new(RichText::new(&name).font(theme::bold(34.0)).color(p.accent)).wrap());
                             if self.cfg.remove_after {
                                 ui.add_space(2.0);
-                                theme::hint(ui, "Участник будет убран из списка", p);
+                                theme::hint(ui, t.will_be_removed, p);
                             }
                             ui.add_space(18.0);
 
@@ -778,13 +804,13 @@ impl App {
                                 row
                             } else {
                                 let ghost = Rect::from_min_size(row.min, vec2(180.0, h));
-                                if theme::button_at(ui, ghost, Id::unique("w-remove"), "Убрать из списка", Btn::Ghost, p).clicked() {
+                                if theme::button_at(ui, ghost, Id::unique("w-remove"), t.remove_from_list, Btn::Ghost, p).clicked() {
                                     remove = true;
                                     close = true;
                                 }
                                 Rect::from_min_max(pos2(row.right() - 180.0, row.top()), row.max)
                             };
-                            if theme::gradient_button(ui, done_rect, Id::unique("w-done"), "Готово", None, true, &self.tex, p).clicked() {
+                            if theme::gradient_button(ui, done_rect, Id::unique("w-done"), t.done, None, true, &self.tex, p).clicked() {
                                 close = true;
                             }
                         });
@@ -861,7 +887,7 @@ impl eframe::App for App {
         let p = Pal::of(ui.visuals().dark_mode);
         let entries = parse_entries(&self.cfg.text);
         self.handle_keys(&ctx, &entries);
-        // Только для отладки: RANDOM_WHEEL_AUTOSPIN=1 запускает вращение через секунду после старта.
+        // Debug only: RANDOM_WHEEL_AUTOSPIN=1 starts a spin one second after launch.
         #[cfg(debug_assertions)]
         if ctx.input(|i| i.time) > 1.0
             && self.cfg.history.is_empty()

@@ -2,31 +2,31 @@
   "schema": 1,
   "id": "random-wheel",
   "name": "Random Wheel",
-  "tagline": "Колесо фортуны для честных розыгрышей",
-  "description": "Впишите участников, нажмите «Крутить» — программа выберет победителя. Подходит для дежурств, розыгрышей и стримов. Один exe без зависимостей, работает офлайн.",
+  "tagline": "A wheel of fortune for fair draws",
+  "description": "Type in the participants, press Spin, and the app picks the winner. Great for duty rosters, giveaways and streams. A single exe with no dependencies that works offline.",
   "features": [
     {
-      "title": "Колесо и список",
-      "text": "Два режима показа: вращающееся колесо или бегущая подсветка по списку."
+      "title": "Wheel and list",
+      "text": "Two ways to show the draw: a spinning wheel or a running highlight down the list."
     },
     {
-      "title": "Честный выбор",
-      "text": "Победитель выбирается равновероятно до начала анимации, без смещения по модулю."
+      "title": "Fair pick",
+      "text": "The winner is chosen with equal probability before the animation starts, with no modulo bias."
     },
     {
-      "title": "Импорт участников",
-      "text": "Загрузка из .txt и .csv в UTF-8, UTF-16 и Windows-1251 — подойдёт выгрузка из Excel."
+      "title": "Import participants",
+      "text": "Load from .txt and .csv in UTF-8, UTF-16 and Windows-1251, so an Excel export works too."
     },
     {
-      "title": "Оформление розыгрыша",
-      "text": "Свой текст при победе, длительность вращения от 2 до 12 секунд, конфетти."
+      "title": "Draw styling",
+      "text": "Your own winner message, spin time from 2 to 12 seconds, confetti."
     },
     {
-      "title": "История и полноэкранный режим",
-      "text": "Последние 15 победителей, F11 для показа на проекторе или стриме."
+      "title": "History and full screen",
+      "text": "The last 15 winners, and F11 for a projector or stream."
     }
   ],
-  "category": "Утилиты",
+  "category": "Utilities",
   "accent": [
     "#4f6bff",
     "#8a5bff"
@@ -41,5 +41,67 @@
   "requirements": [
     "Windows 10/11 x64"
   ],
-  "settingsDir": "%APPDATA%\\Random Wheel"
+  "settingsDir": "%APPDATA%\\Random Wheel",
+  "i18n": {
+    "ru": {
+      "tagline": "Колесо фортуны для честных розыгрышей",
+      "description": "Впишите участников, нажмите «Крутить» — программа выберет победителя. Подходит для дежурств, розыгрышей и стримов. Один exe без зависимостей, работает офлайн.",
+      "category": "Утилиты",
+      "features": [
+        {
+          "title": "Колесо и список",
+          "text": "Два режима показа: вращающееся колесо или бегущая подсветка по списку."
+        },
+        {
+          "title": "Честный выбор",
+          "text": "Победитель выбирается равновероятно до начала анимации, без смещения по модулю."
+        },
+        {
+          "title": "Импорт участников",
+          "text": "Загрузка из .txt и .csv в UTF-8, UTF-16 и Windows-1251 — подойдёт выгрузка из Excel."
+        },
+        {
+          "title": "Оформление розыгрыша",
+          "text": "Свой текст при победе, длительность вращения от 2 до 12 секунд, конфетти."
+        },
+        {
+          "title": "История и полноэкранный режим",
+          "text": "Последние 15 победителей, F11 для показа на проекторе или стриме."
+        }
+      ],
+      "requirements": [
+        "Windows 10/11 x64"
+      ]
+    },
+    "uk": {
+      "tagline": "Колесо фортуни для чесних розіграшів",
+      "description": "Впишіть учасників, натисніть «Крутити» — програма обере переможця. Підходить для чергувань, розіграшів і стрімів. Один exe без залежностей, працює офлайн.",
+      "category": "Утиліти",
+      "features": [
+        {
+          "title": "Колесо і список",
+          "text": "Два режими показу: колесо, що крутиться, або рухоме підсвічування по списку."
+        },
+        {
+          "title": "Чесний вибір",
+          "text": "Переможця обирають з однаковою ймовірністю ще до початку анімації, без зсуву за модулем."
+        },
+        {
+          "title": "Імпорт учасників",
+          "text": "Завантаження з .txt і .csv у UTF-8, UTF-16 та Windows-1251 — підійде й вивантаження з Excel."
+        },
+        {
+          "title": "Оформлення розіграшу",
+          "text": "Власний текст перемоги, тривалість обертання від 2 до 12 секунд, конфеті."
+        },
+        {
+          "title": "Історія та повноекранний режим",
+          "text": "Останні 15 переможців, F11 для показу на проєкторі чи стрімі."
+        }
+      ],
+      "requirements": [
+        "Windows 10/11 x64"
+      ]
+    }
+  }
 }
