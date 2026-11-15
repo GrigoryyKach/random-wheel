@@ -6,12 +6,14 @@ use eframe::egui::{
     ScrollArea, Sense, Shape, Stroke, StrokeKind, TextEdit, Ui, UiBuilder, Vec2, pos2, vec2,
 };
 
-use crate::config::{Config, View};
+use crate::config::{Config, Tab, View};
 use crate::i18n::{self, Lang};
 use crate::nimvoro::{self, UpdateState, Updater};
 use crate::strings::{self, S};
 use crate::theme::{self, Btn, Pal, Textures};
 use crate::wheel::{self, Rng, WheelState};
+
+mod dbd_ui;
 
 pub fn parse_entries(text: &str) -> Vec<String> {
     text.lines().map(str::trim).filter(|l| !l.is_empty()).map(String::from).collect()
@@ -27,12 +29,15 @@ struct Spin {
     n: usize,
     list_from: usize,
     list_steps: usize,
+    /// Dead by Daylight round: id of the winning killer.
+    dbd_id: Option<String>,
 }
 
 struct Outcome {
     winner: usize,
     name: String,
     at: f64,
+    dbd: bool,
 }
 
 struct Particle {
@@ -60,6 +65,7 @@ pub struct App {
     dirty_since: Option<f64>,
     focus_mode: bool,
     updater: Updater,
+    dbd: dbd_ui::Dbd,
 }
 
 impl App {
@@ -98,6 +104,7 @@ impl App {
             dirty_since,
             focus_mode: false,
             updater,
+            dbd: dbd_ui::Dbd::new(&cc.egui_ctx),
         }
     }
 
@@ -109,8 +116,13 @@ impl App {
         self.dirty_since = Some(ctx.input(|i| i.time));
     }
 
+    /// The classic wheel needs two names; a single eligible killer is still a result.
+    fn min_entries(&self) -> usize {
+        if self.cfg.tab == Tab::Dbd { 1 } else { 2 }
+    }
+
     fn can_spin(&self, entries: &[String]) -> bool {
-        entries.len() >= 2 && self.spin.is_none() && self.outcome.is_none()
+        entries.len() >= self.min_entries() && self.spin.is_none() && self.outcome.is_none()
     }
 
     // ───────────────────────── draw ─────────────────────────
@@ -122,6 +134,14 @@ impl App {
         let n = entries.len();
         // The winner is decided here with equal probability; the animation only leads to it.
         let winner = self.rng.below(n);
+        let mut dbd_id = None;
+        if self.cfg.tab == Tab::Dbd {
+            dbd_id = self.dbd.eligible_ids().get(winner).cloned();
+            if dbd_id.is_none() {
+                return;
+            }
+            self.dbd.frozen = entries.to_vec();
+        }
         let frac = 0.15 + 0.7 * self.rng.f32();
         let from = self.rot.rem_euclid(TAU);
         let target = wheel::rotation_for(winner, frac, n);
@@ -144,6 +164,7 @@ impl App {
             n,
             list_from,
             list_steps,
+            dbd_id,
         });
         ctx.memory_mut(|m| {
             if let Some(id) = m.focused() {
@@ -157,10 +178,15 @@ impl App {
         self.rot = sp.to.rem_euclid(TAU);
         self.list_cursor = sp.winner;
         self.highlight = Some(sp.winner);
-        self.cfg.history.insert(0, sp.name.clone());
-        self.cfg.history.truncate(15);
-        self.touch(ctx);
-        self.outcome = Some(Outcome { winner: sp.winner, name: sp.name, at: now });
+        let dbd = sp.dbd_id.is_some();
+        if let Some(id) = &sp.dbd_id {
+            self.dbd_commit(id);
+        } else {
+            self.cfg.history.insert(0, sp.name.clone());
+            self.cfg.history.truncate(15);
+            self.touch(ctx);
+        }
+        self.outcome = Some(Outcome { winner: sp.winner, name: sp.name, at: now, dbd });
         if self.cfg.confetti {
             self.spawn_confetti(ctx.content_rect());
         }
@@ -184,6 +210,11 @@ impl App {
 
     fn close_outcome(&mut self, ctx: &egui::Context, remove: bool) {
         if let Some(o) = self.outcome.take() {
+            if o.dbd {
+                self.dbd.frozen.clear();
+                self.highlight = None;
+                return;
+            }
             if remove || self.cfg.remove_after {
                 self.remove_entry(o.winner);
                 self.highlight = None;
@@ -321,6 +352,8 @@ impl App {
         let t = self.s();
         ui.vertical_centered(|ui| {
             ui.add_space(4.0);
+            self.tab_switch(ui, p);
+            ui.add_space(10.0);
             ui.label(RichText::new(t.title).font(theme::bold(28.0)).color(p.text));
             ui.add_space(-4.0);
             let sub = if entries.is_empty() {
@@ -754,6 +787,7 @@ impl App {
             ctx.request_repaint();
         }
         let name = o.name.clone();
+        let dbd = o.dbd;
         let t = self.s();
         let screen = ctx.content_rect();
 
@@ -787,20 +821,27 @@ impl App {
                             painter.text(r.center(), Align2::CENTER_CENTER, "★", theme::bold(30.0), Color32::WHITE);
                             ui.add_space(10.0);
 
-                            let prompt = if self.cfg.prompt.trim().is_empty() { t.winner_default } else { self.cfg.prompt.trim() };
+                            let prompt = if dbd {
+                                self.d().your_killer
+                            } else if self.cfg.prompt.trim().is_empty() {
+                                t.winner_default
+                            } else {
+                                self.cfg.prompt.trim()
+                            };
                             ui.label(RichText::new(prompt).font(theme::reg(15.0)).color(p.muted));
                             ui.add_space(2.0);
                             ui.add(egui::Label::new(RichText::new(&name).font(theme::bold(34.0)).color(p.accent)).wrap());
-                            if self.cfg.remove_after {
+                            if self.cfg.remove_after && !dbd {
                                 ui.add_space(2.0);
                                 theme::hint(ui, t.will_be_removed, p);
                             }
                             ui.add_space(18.0);
 
                             let h = 42.0;
-                            let total = if self.cfg.remove_after { 180.0 } else { 370.0 };
+                            let single = self.cfg.remove_after || dbd;
+                            let total = if single { 180.0 } else { 370.0 };
                             let (row, _) = ui.allocate_exact_size(vec2(total, h), Sense::hover());
-                            let done_rect = if self.cfg.remove_after {
+                            let done_rect = if single {
                                 row
                             } else {
                                 let ghost = Rect::from_min_size(row.min, vec2(180.0, h));
@@ -870,6 +911,7 @@ impl eframe::App for App {
             self.finish_spin(ctx, sp);
         }
 
+        self.dbd.poll();
         self.step_confetti(ctx, dt);
 
         if let Some(t0) = self.dirty_since {
@@ -885,7 +927,7 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let p = Pal::of(ui.visuals().dark_mode);
-        let entries = parse_entries(&self.cfg.text);
+        let entries = if self.cfg.tab == Tab::Dbd { self.dbd_entries() } else { parse_entries(&self.cfg.text) };
         self.handle_keys(&ctx, &entries);
         // Debug only: RANDOM_WHEEL_AUTOSPIN=1 starts a spin one second after launch.
         #[cfg(debug_assertions)]
@@ -902,16 +944,17 @@ impl eframe::App for App {
             ctx.request_repaint();
         }
 
+        let dbd_tab = self.cfg.tab == Tab::Dbd;
         if !self.focus_mode {
             egui::Panel::right("settings")
-                .exact_size(340.0)
+                .exact_size(if dbd_tab { 380.0 } else { 340.0 })
                 .resizable(false)
                 .frame(Frame::new().fill(p.sidebar).inner_margin(Margin { left: 22, right: 12, top: 22, bottom: 12 }))
-                .show(ui, |ui| self.settings_panel(ui, &p, &entries));
+                .show(ui, |ui| if dbd_tab { self.dbd_panel(ui, &p) } else { self.settings_panel(ui, &p, &entries) });
         }
         egui::CentralPanel::default()
             .frame(Frame::new().fill(p.bg).inner_margin(Margin::symmetric(32, 24)))
-            .show(ui, |ui| self.main_view(ui, &p, &entries));
+            .show(ui, |ui| if dbd_tab { self.main_view_dbd(ui, &p, &entries) } else { self.main_view(ui, &p, &entries) });
 
         if self.outcome.is_some() {
             self.winner_modal(&ctx, &p);

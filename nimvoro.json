@@ -24,6 +24,10 @@
     {
       "title": "History and full screen",
       "text": "The last 15 winners, and F11 for a projector or stream."
+    },
+    {
+      "title": "Dead by Daylight mode",
+      "text": "A second tab that picks your killer with house rules: friends ban, the last winner sits out, two bans earn immunity. Includes every killer, with Russian names."
     }
   ],
   "category": "Utilities",
@@ -34,7 +38,8 @@
   "icon": "assets/icon.png",
   "screenshots": [
     "assets/screenshots/1.png",
-    "assets/screenshots/2.png"
+    "assets/screenshots/2.png",
+    "assets/screenshots/3.png"
   ],
   "exe": "RandomWheel.exe",
   "asset": "RandomWheel-win-x64.zip",
@@ -67,6 +72,10 @@
         {
           "title": "История и полноэкранный режим",
           "text": "Последние 15 победителей, F11 для показа на проекторе или стриме."
+        },
+        {
+          "title": "Режим Dead by Daylight",
+          "text": "Вторая вкладка выбирает вашего маньяка по домашним правилам: друзья банят, прошлый победитель пропускает раунд, два бана дают иммунитет. Есть все маньяки с русскими названиями."
         }
       ],
       "requirements": [
@@ -97,6 +106,10 @@
         {
           "title": "Історія та повноекранний режим",
           "text": "Останні 15 переможців, F11 для показу на проєкторі чи стрімі."
+        },
+        {
+          "title": "Режим Dead by Daylight",
+          "text": "Друга вкладка обирає вашого вбивцю за домашніми правилами: друзі банять, минулий переможець пропускає раунд, два бани дають імунітет. Є всі вбивці з російськими назвами."
         }
       ],
       "requirements": [

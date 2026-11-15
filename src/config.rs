@@ -8,6 +8,13 @@ pub enum View {
     Wheel,
 }
 
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Tab {
+    #[default]
+    Wheel,
+    Dbd,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct Config {
@@ -19,6 +26,8 @@ pub struct Config {
     pub confetti: bool,
     pub spin_secs: f32,
     pub view: View,
+    /// Last open tab (the classic wheel or Dead by Daylight).
+    pub tab: Tab,
     pub history: Vec<String>,
     /// Check for updates on startup (NIMVORO).
     pub check_updates: bool,
@@ -39,6 +48,7 @@ impl Default for Config {
             confetti: true,
             spin_secs: 5.0,
             view: View::Wheel,
+            tab: Tab::Wheel,
             history: Vec::new(),
             check_updates: true,
             language: None,

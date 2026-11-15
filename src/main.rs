@@ -2,6 +2,9 @@
 
 mod app;
 mod config;
+mod dbd;
+mod dbd_io;
+mod dbd_strings;
 mod i18n;
 mod import;
 mod nimvoro;

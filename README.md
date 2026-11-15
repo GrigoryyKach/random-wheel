@@ -37,9 +37,33 @@ The finished exe is `target/release/RandomWheel.exe`; you can copy it anywhere.
 - **Confetti** when the winner is announced.
 - **History** of the last 15 winners.
 - **Full screen** with the button next to the switch or F11; Esc exits.
+- **Dead by Daylight tab** with house rules; see below.
 
 Shortcuts: Space or Enter spins (when the cursor is not in the input field); in the result dialog Enter, Space or Esc closes it.
 You can also just click the wheel.
+
+## Dead by Daylight mode
+
+The second tab, "Dead by Daylight", picks which killer you play, with a set of house rules built in. The classic wheel is unchanged. The last open tab is remembered.
+There is one state per PC: your pool, ban counters, immunity, the last winner and the history.
+
+1. **Pool.** Check the killers who take part. The picker has search and All, None and Invert buttons.
+2. **Bans.** Friends ban killers from the pool for this round. A ban can be undone until you spin.
+3. **Spin.** The wheel spins over *pool minus banned minus the last winner*. The result ends the round and commits its effects.
+
+Rules:
+
+- **Last winner sits out.** The killer who won the previous round is locked for exactly one round: it is greyed out, cannot be added to the pool and cannot be banned. Then the lock moves to the new winner.
+- **Two bans earn immunity.** Every committed round adds 1 to the ban counter of each killer banned in it (shown as two pips). When a counter reaches 2, the killer becomes immune for the next round (its ban button is disabled) and the counter resets to 0. Immunity ends after that round.
+- **Guard.** With no killer left on the wheel, Spin is disabled and a hint says why. A single eligible killer can still be spun.
+- **Undo last round** restores the state from before the last spin (one step). **Reset counters** clears bans, immunity and the lock after a confirmation.
+- **History** keeps the last 50 rounds: date and time, pool size, banned killers and the winner.
+
+The killer list is `data/dbd_killers.json`: every killer released so far, in release order, with the English name and the Russian name from the game's Russian localization. Killers that are no longer sold (for example The Shape) are marked and still selectable. Russian and Ukrainian interfaces both show the Russian names.
+On start the app fetches the list from this repository in the background; if its `version` is newer it is cached in the settings folder and used, otherwise the cache or the built-in list is used. Until the list is updated you can add custom killers (one name for all languages) and remove them again.
+The state is stored in `%APPDATA%Random Wheeldbd.json`, written atomically. Space spins when nothing is being edited.
+
+This is an unofficial fan tool, not affiliated with Behaviour Interactive. It uses no game art or logos; "Dead by Daylight" appears only as a plain-text name.
 
 ## Fair pick
 
@@ -56,6 +80,11 @@ The animation only brings the wheel to the chosen segment; the stopping point in
 ```
 src/main.rs     window, icon (loaded from assets/icon.png)
 src/app.rs      state, draw, main area, settings panel, winner dialog, confetti
+src/app/dbd_ui.rs  the Dead by Daylight tab: picker, round panel, history
+src/dbd.rs      Dead by Daylight rules engine and killer list (pure logic, unit tests)
+src/dbd_io.rs   dbd.json, killer list cache and background update
+src/dbd_strings.rs  strings of the Dead by Daylight tab
+data/dbd_killers.json  the killer list, also fetched from GitHub by running apps
 src/strings.rs  interface strings (English, Russian, Ukrainian)
 src/wheel.rs    random number generator, rotation maths, wheel painting
 src/theme.rs    shared: light/dark palette, theme mode, widgets, icons
