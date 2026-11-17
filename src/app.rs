@@ -9,6 +9,7 @@ use eframe::egui::{
 use crate::config::{Config, Tab, View};
 use crate::i18n::{self, Lang};
 use crate::nimvoro::{self, UpdateState, Updater};
+use crate::support;
 use crate::strings::{self, S};
 use crate::theme::{self, Btn, Pal, Textures};
 use crate::wheel::{self, Rng, WheelState};
@@ -697,6 +698,10 @@ impl App {
                     }
                 });
             });
+
+            // ── Support the author
+            theme::divider(ui, p);
+            support::support_section(ui, self.lang);
             ui.add_space(10.0);
         });
     }

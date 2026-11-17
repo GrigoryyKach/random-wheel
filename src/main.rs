@@ -9,6 +9,7 @@ mod i18n;
 mod import;
 mod nimvoro;
 mod strings;
+mod support;
 mod theme;
 mod wheel;
 

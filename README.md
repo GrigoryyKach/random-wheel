@@ -112,3 +112,7 @@ On startup the app checks the latest [release](https://github.com/GrigoryyKach/r
 If a new version exists, the "Update" button hands the update to the launcher, or opens the release page when there is no launcher.
 
 A release is built by GitHub Actions when a tag is pushed: bump the version in `Cargo.toml`, then `git tag v{version} && git push --tags`.
+
+## Support
+
+If you find this app useful, you can support its development: <https://donatello.to/MicsGame>
