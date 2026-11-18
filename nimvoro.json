@@ -53,7 +53,7 @@
   "linux": {
     "asset": "RandomWheel-linux-x64.tar.gz",
     "exe": "random-wheel",
-    "requirements": "Linux x86_64 (X11 or Wayland) with GTK 3 (libgtk-3-0), needed for the file dialog"
+    "requirements": "Linux x86_64 (X11 or Wayland) with xdg-desktop-portal (the file dialog)"
   },
   "settingsDir": "%APPDATA%\\Random Wheel",
   "i18n": {
@@ -91,7 +91,7 @@
         "Windows 10/11 x64"
       ],
       "linux": {
-        "requirements": "Linux x86_64 (X11 или Wayland) с GTK 3 (libgtk-3-0) для диалога выбора файла"
+        "requirements": "Linux x86_64 (X11 или Wayland) с xdg-desktop-portal (диалог выбора файла)"
       }
     },
     "uk": {
@@ -128,7 +128,7 @@
         "Windows 10/11 x64"
       ],
       "linux": {
-        "requirements": "Linux x86_64 (X11 або Wayland) з GTK 3 (libgtk-3-0) для діалогу вибору файлу"
+        "requirements": "Linux x86_64 (X11 або Wayland) з xdg-desktop-portal (діалог вибору файлу)"
       }
     }
   }

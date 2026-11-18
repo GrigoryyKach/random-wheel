@@ -30,10 +30,10 @@ The finished exe is `target/release/RandomWheel.exe` (`target/release/RandomWhee
 
 ### Linux
 
-Unpack the archive and run `./random-wheel`. The file dialog needs GTK 3 (`libgtk-3-0`, present on most desktops). To build from source:
+Unpack the archive and run `./random-wheel`. The file dialog goes through `xdg-desktop-portal` (present on all mainstream desktops; install `xdg-desktop-portal-gtk` or `-kde` if the Browse button does nothing). To build from source:
 
 ```bash
-sudo apt install build-essential pkg-config libgtk-3-dev libxkbcommon-dev libwayland-dev libx11-dev libxcb1-dev
+sudo apt install build-essential pkg-config libxkbcommon-dev libwayland-dev libx11-dev libxcb1-dev
 cargo build --release
 ```
 
