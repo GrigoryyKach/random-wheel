@@ -1,10 +1,10 @@
 # Random Wheel
 
-A wheel of fortune for Windows: type the participants in the panel on the right, press "Spin the wheel", and the app picks a winner.
-Written in Rust (eframe/egui): a single exe with no dependencies that works offline.
+A wheel of fortune for Windows and Linux: type the participants in the panel on the right, press "Spin the wheel", and the app picks a winner.
+Written in Rust (eframe/egui): a single executable with no dependencies that works offline.
 
 The look follows Smart Switcher: the same light and dark palettes, the brand gradient `#4f6bff → #8a5bff`,
-Segoe UI, cards, switches and capitalised section headings.
+Segoe UI on Windows (the bundled font on Linux), cards, switches and capitalised section headings.
 
 ## Languages
 
@@ -13,7 +13,12 @@ The starting language is taken from the app config, then from the `.nimvoro.json
 
 ## Theme
 
-Settings → Interface → Theme: System (default, follows Windows live), Light or Dark.
+Settings → Interface → Theme: System (default, follows the Windows setting live; on Linux it follows the Wayland portal or GNOME `color-scheme`, falling back to dark), Light or Dark.
+
+## Platforms
+
+- **Windows** 10/11 x64: `RandomWheel-win-x64.zip` from the release, or via the NIMVORO launcher.
+- **Linux** x86_64, X11 and Wayland (built on Ubuntu 22.04, so glibc 2.35 or newer): `RandomWheel-linux-x64.tar.gz` from the release, or via the NIMVORO launcher.
 
 ## Run
 
@@ -21,7 +26,18 @@ Settings → Interface → Theme: System (default, follows Windows live), Light 
 cargo run --release
 ```
 
-The finished exe is `target/release/RandomWheel.exe`; you can copy it anywhere.
+The finished exe is `target/release/RandomWheel.exe` (`target/release/RandomWheel` on Linux); you can copy it anywhere.
+
+### Linux
+
+Unpack the archive and run `./random-wheel`. The file dialog needs GTK 3 (`libgtk-3-0`, present on most desktops). To build from source:
+
+```bash
+sudo apt install build-essential pkg-config libgtk-3-dev libxkbcommon-dev libwayland-dev libx11-dev libxcb1-dev
+cargo build --release
+```
+
+Known limitations: on Wayland the window is positioned by the compositor (the "centered" hint is ignored); some systems lack an emoji font, so the emoji in the winner message may show as a box.
 
 ## Features
 
@@ -61,7 +77,7 @@ Rules:
 
 The killer list is `data/dbd_killers.json`: every killer released so far, in release order, with the English name and the Russian name from the game's Russian localization. Killers that are no longer sold (for example The Shape) are marked and still selectable. Russian and Ukrainian interfaces both show the Russian names.
 On start the app fetches the list from this repository in the background; if its `version` is newer it is cached in the settings folder and used, otherwise the cache or the built-in list is used. Until the list is updated you can add custom killers (one name for all languages) and remove them again.
-The state is stored in `%APPDATA%Random Wheeldbd.json`, written atomically. Space spins when nothing is being edited.
+The state is stored in `dbd.json` in the settings folder (see below), written atomically. Space spins when nothing is being edited.
 
 This is an unofficial fan tool, not affiliated with Behaviour Interactive. It uses no game art or logos; "Dead by Daylight" appears only as a plain-text name.
 
@@ -73,7 +89,7 @@ The animation only brings the wheel to the chosen segment; the stopping point in
 
 ## Where settings are stored
 
-`%APPDATA%\Random Wheel\config.json`: participants, settings, language, theme and history. Saved automatically.
+`%APPDATA%\Random Wheel\config.json` on Windows, `~/.config/Random Wheel/config.json` on Linux: participants, settings, language, theme and history. Saved automatically.
 
 ## Layout
 
@@ -111,7 +127,7 @@ The tool is part of the [NIMVORO](https://github.com/GrigoryyKach/nimvoro) suite
 On startup the app checks the latest [release](https://github.com/GrigoryyKach/random-wheel/releases/latest) (the "Check on startup" switch under Updates).
 If a new version exists, the "Update" button hands the update to the launcher, or opens the release page when there is no launcher.
 
-A release is built by GitHub Actions when a tag is pushed: bump the version in `Cargo.toml`, then `git tag v{version} && git push --tags`.
+A release is built by GitHub Actions when a tag is pushed (a Windows job and a Linux job, one release with both assets): bump the version in `Cargo.toml`, then `git tag v{version} && git push --tags`.
 
 ## Support
 

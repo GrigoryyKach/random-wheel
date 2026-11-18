@@ -2,11 +2,13 @@
 //! local time. Everything here is best effort: failures never reach the user.
 
 use crate::dbd::{KillerList, State};
+#[cfg(windows)]
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 
+#[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const LIST_URL: &str = "https://raw.githubusercontent.com/GrigoryyKach/random-wheel/main/data/dbd_killers.json";
 
@@ -57,12 +59,11 @@ pub fn fetch_list(current_version: u32, on_done: impl FnOnce() + Send + 'static)
     let slot = Arc::new(Mutex::new(None));
     let out = slot.clone();
     std::thread::spawn(move || {
-        let res = Command::new("curl.exe")
-            .args(["-sfL", "--max-time", "10", "-A", "RandomWheel", LIST_URL])
-            .stdin(Stdio::null())
-            .stderr(Stdio::null())
-            .creation_flags(CREATE_NO_WINDOW)
-            .output();
+        let mut cmd = Command::new(if cfg!(windows) { "curl.exe" } else { "curl" });
+        cmd.args(["-sfL", "--max-time", "10", "-A", "RandomWheel", LIST_URL]).stdin(Stdio::null()).stderr(Stdio::null());
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        let res = cmd.output();
         if let Ok(o) = res {
             if o.status.success() {
                 if let Some(list) = KillerList::parse(&String::from_utf8_lossy(&o.stdout)) {
@@ -80,6 +81,7 @@ pub fn fetch_list(current_version: u32, on_done: impl FnOnce() + Send + 'static)
     slot
 }
 
+#[cfg(windows)]
 #[repr(C)]
 #[derive(Default)]
 struct SystemTime {
@@ -93,17 +95,32 @@ struct SystemTime {
     millis: u16,
 }
 
+#[cfg(windows)]
 #[link(name = "kernel32")]
 unsafe extern "system" {
     fn GetLocalTime(t: *mut SystemTime);
 }
 
 /// Local date and time as `YYYY-MM-DD HH:MM`.
+#[cfg(windows)]
 pub fn now_string() -> String {
     let mut t = SystemTime::default();
     // SAFETY: GetLocalTime only writes a SYSTEMTIME into the buffer we pass.
     unsafe { GetLocalTime(&mut t) };
     format!("{:04}-{:02}-{:02} {:02}:{:02}", t.year, t.month, t.day, t.hour, t.minute)
+}
+
+/// Local date and time as `YYYY-MM-DD HH:MM`.
+#[cfg(not(windows))]
+pub fn now_string() -> String {
+    // SAFETY: localtime_r fills the zeroed `tm` we pass; `time` accepts a null pointer.
+    let tm = unsafe {
+        let t = libc::time(std::ptr::null_mut());
+        let mut tm: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&t, &mut tm);
+        tm
+    };
+    format!("{:04}-{:02}-{:02} {:02}:{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min)
 }
 
 /// Seconds since the Unix epoch (used for unique ids of custom killers).
