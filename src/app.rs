@@ -595,7 +595,8 @@ impl App {
             ui.label(RichText::new(t.win_text).font(theme::reg(14.0)).color(p.text));
             let r = ui.add(
                 TextEdit::singleline(&mut self.cfg.prompt)
-                    .hint_text(t.win_hint)
+                    // The party-popper emoji has no glyph in the Linux fallback fonts.
+                    .hint_text(if cfg!(windows) { t.win_hint.to_string() } else { t.win_hint.replace("🎉 ", "") })
                     .desired_width(f32::INFINITY)
                     .margin(Margin::symmetric(12, 9))
                     .font(theme::reg(14.0)),
