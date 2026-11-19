@@ -11,10 +11,13 @@ use crate::i18n::{self, Lang};
 use crate::nimvoro::{self, UpdateState, Updater};
 use crate::support;
 use crate::strings::{self, S};
-use crate::theme::{self, Btn, Pal, Textures};
+use crate::theme::{self, Btn, Pal, Seg};
 use crate::wheel::{self, Rng, WheelState};
 
 mod dbd_ui;
+
+/// Random Wheel's accent: the vermilion of the wheel pointer. Dark and light fills, and the text on each.
+const ACCENT: theme::Accent = theme::Accent::new(0xec5b45, 0xc93a25, 0x141415, 0xffffff);
 
 pub fn parse_entries(text: &str) -> Vec<String> {
     text.lines().map(str::trim).filter(|l| !l.is_empty()).map(String::from).collect()
@@ -59,7 +62,6 @@ pub struct App {
     highlight: Option<usize>,
     list_cursor: usize,
     rng: Rng,
-    tex: Textures,
     file_label: Option<String>,
     import_error: Option<String>,
     confetti: Vec<Particle>,
@@ -71,6 +73,7 @@ pub struct App {
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, mut cfg: Config) -> Self {
+        theme::set_accent(ACCENT);
         theme::install(&cc.egui_ctx, cfg.theme);
         // Starting language: config, then the launcher marker, then English; persisted for next time.
         let lang = i18n::resolve(cfg.language.as_deref());
@@ -98,7 +101,6 @@ impl App {
             highlight: None,
             list_cursor: 0,
             rng,
-            tex: Textures::new(&cc.egui_ctx),
             file_label: None,
             import_error: None,
             confetti: Vec::new(),
@@ -352,25 +354,26 @@ impl App {
         let ctx = ui.ctx().clone();
         let t = self.s();
         ui.vertical_centered(|ui| {
-            ui.add_space(4.0);
             self.tab_switch(ui, p);
-            ui.add_space(10.0);
-            ui.label(RichText::new(t.title).font(theme::bold(28.0)).color(p.text));
-            ui.add_space(-4.0);
-            let sub = if entries.is_empty() {
-                t.add_hint.to_string()
-            } else {
-                i18n::plural(self.lang, entries.len(), &t.in_draw)
-            };
-            ui.label(RichText::new(sub).font(theme::reg(14.0)).color(p.muted));
-            ui.add_space(10.0);
+            ui.add_space(8.0);
+            ui.scope(|ui| {
+                ui.spacing_mut().item_spacing.y = 4.0;
+                ui.label(RichText::new(t.title).font(theme::medium(24.0)).color(p.text));
+                let sub = if entries.is_empty() {
+                    t.add_hint.to_string()
+                } else {
+                    i18n::plural(self.lang, entries.len(), &t.in_draw)
+                };
+                ui.label(RichText::new(sub).font(theme::reg(14.0)).color(p.text2));
+            });
+            ui.add_space(4.0);
             self.toolbar(ui, p);
-            ui.add_space(14.0);
+            ui.add_space(8.0);
         });
 
         let avail = ui.available_rect_before_wrap();
-        let btn_h = 48.0;
-        let area = Rect::from_min_max(avail.min, pos2(avail.max.x, avail.max.y - btn_h - 22.0));
+        let btn_h = 44.0;
+        let area = Rect::from_min_max(avail.min, pos2(avail.max.x, avail.max.y - btn_h - 24.0));
         let width = match self.cfg.view {
             View::Wheel => self.wheel_view(ui, area, p, entries),
             View::List => self.list_view(ui, area, p, entries),
@@ -388,7 +391,7 @@ impl App {
         };
         let bw = width.clamp(280.0, 540.0);
         let brect = Rect::from_center_size(pos2(avail.center().x, avail.max.y - btn_h / 2.0), vec2(bw, btn_h));
-        let resp = theme::gradient_button(ui, brect, Id::unique("spin"), label, Some(theme::icon_spin), can, &self.tex, p);
+        let resp = theme::primary_button(ui, brect, Id::unique("spin"), label, Some(theme::icon_spin), can, p);
         if resp.clicked() {
             self.start_spin(&ctx, entries);
         }
@@ -398,49 +401,24 @@ impl App {
     /// The List / Wheel switch and the full-screen button.
     fn toolbar(&mut self, ui: &mut Ui, p: &Pal) {
         let t = self.s();
-        let items = [(View::List, t.list, theme::icon_list as fn(_, _, _)), (View::Wheel, t.wheel, theme::icon_wheel)];
-        let font = theme::semi(13.5);
-        let widths: Vec<f32> = items
-            .iter()
-            .map(|(_, l, _)| ui.painter().layout_no_wrap(l.to_string(), font.clone(), p.text).size().x + 12.0 + 16.0 + 8.0 + 14.0)
-            .collect();
-        let seg_w = widths.iter().sum::<f32>() + 8.0;
-        let h = 38.0;
-        let (rect, _) = ui.allocate_exact_size(vec2(seg_w + 8.0 + h, h), Sense::hover());
-        let seg = Rect::from_min_size(rect.min, vec2(seg_w, h));
-        ui.painter().rect(seg, 11.0, p.sidebar, Stroke::new(1.0, p.line), StrokeKind::Inside);
-
-        let mut x = seg.left() + 4.0;
-        for ((view, label, icon), w) in items.into_iter().zip(widths) {
-            let r = Rect::from_min_size(pos2(x, seg.top() + 4.0), vec2(w, h - 8.0));
-            let resp = ui.interact(r, Id::unique(("seg", label)), Sense::click()).on_hover_cursor(CursorIcon::PointingHand);
-            let active = self.cfg.view == view;
-            let painter = ui.painter();
-            if active {
-                if !p.dark {
-                    painter.add(theme::shadow(1, 3, Color32::from_black_alpha(25)).as_shape(r, 8.0));
-                }
-                painter.rect_filled(r, 8.0, p.card);
-            } else if resp.hovered() {
-                painter.rect_filled(r, 8.0, p.hover);
-            }
-            let col = if active || resp.hovered() { p.text } else { p.muted };
-            icon(painter, pos2(r.left() + 12.0 + 8.0, r.center().y), if active { p.accent } else { col });
-            painter.text(pos2(r.left() + 12.0 + 16.0 + 8.0, r.center().y), Align2::LEFT_CENTER, label, font.clone(), col);
-            if resp.clicked() && !active {
-                self.cfg.view = view;
-                self.dirty_since = Some(ui.input(|i| i.time));
-            }
-            x += w;
+        let items = [Seg { label: t.list, icon: Some(theme::icon_list) }, Seg { label: t.wheel, icon: Some(theme::icon_wheel) }];
+        let seg_w = theme::segmented_width(ui, &items, p);
+        let (row, _) = ui.allocate_exact_size(vec2(seg_w + 8.0 + 40.0, 40.0), Sense::hover());
+        let mut child = ui.new_child(UiBuilder::new().max_rect(row).layout(Layout::left_to_right(Align::Min)));
+        child.spacing_mut().item_spacing.x = 8.0;
+        let selected = if self.cfg.view == View::List { 0 } else { 1 };
+        if let Some(i) = theme::segmented(&mut child, &items, selected, p) {
+            self.cfg.view = if i == 0 { View::List } else { View::Wheel };
+            self.dirty_since = Some(ui.input(|i| i.time));
         }
 
-        let fr = Rect::from_min_size(pos2(seg.right() + 8.0, rect.top()), Vec2::splat(h));
+        let fr = Rect::from_min_size(pos2(row.right() - 40.0, row.top()), Vec2::splat(40.0));
         let tip = if self.focus_mode { t.exit_fullscreen } else { t.fullscreen };
-        let resp = ui.interact(fr, Id::unique("fullscreen"), Sense::click()).on_hover_cursor(CursorIcon::PointingHand).on_hover_text(tip);
-        if resp.hovered() {
-            ui.painter().rect_filled(fr, 9.0, p.hover);
-        }
-        theme::icon_fullscreen(ui.painter(), fr.center(), if resp.hovered() { p.text } else { p.muted }, self.focus_mode);
+        let id = Id::unique("fullscreen");
+        let resp = ui.interact(fr, id, Sense::click()).on_hover_cursor(CursorIcon::PointingHand).on_hover_text(tip);
+        let hov = theme::fade(ui, id.with("hover"), resp.hovered());
+        ui.painter().rect_filled(fr, 8.0, theme::alpha(p.raised, (hov * 255.0) as u8));
+        theme::icon_fullscreen(ui.painter(), fr.center(), theme::mix(p.text2, p.text, hov), self.focus_mode);
         if resp.clicked() {
             let ctx = ui.ctx().clone();
             self.toggle_focus(&ctx);
@@ -448,7 +426,7 @@ impl App {
     }
 
     fn wheel_view(&mut self, ui: &mut Ui, area: Rect, p: &Pal, entries: &[String]) -> f32 {
-        let d = (area.width().min(area.height()) - 30.0).clamp(160.0, 760.0);
+        let d = (area.width().min(area.height()) - 32.0).clamp(160.0, 760.0);
         let r = d / 2.0;
         let c = area.center();
         let resp = ui.interact(Rect::from_center_size(c, Vec2::splat(d)), Id::unique("wheel"), Sense::click());
@@ -483,42 +461,42 @@ impl App {
 
         if entries.is_empty() {
             let r = Rect::from_min_size(col.min, vec2(w, 120.0));
-            let stroke = Stroke::new(1.0, p.line);
+            let stroke = Stroke::new(1.0, p.line_hi);
             let c = [r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom(), r.left_top()];
             for k in 0..4 {
                 child.painter().extend(Shape::dashed_line(&[c[k], c[k + 1]], stroke, 6.0, 4.0));
             }
-            child.painter().text(r.center(), Align2::CENTER_CENTER, self.s().list_empty, theme::reg(13.5), p.muted);
+            child.painter().text(r.center(), Align2::CENTER_CENTER, self.s().list_empty, theme::reg(14.0), p.muted);
             return w;
         }
 
         let spinning = self.spin.is_some();
         let cursor = self.list_cursor;
         ScrollArea::vertical().id_salt("list").auto_shrink([false; 2]).show(&mut child, |ui| {
-            ui.spacing_mut().item_spacing.y = 6.0;
+            ui.spacing_mut().item_spacing.y = 4.0;
             for (i, name) in entries.iter().enumerate() {
-                let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 44.0), Sense::hover());
+                let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 40.0), Sense::hover());
                 let active = spinning && i == cursor;
                 let win = !spinning && self.highlight == Some(i);
+                let dimmed = self.highlight.is_some() && !spinning && !win;
                 let painter = ui.painter();
-                let (num_bg, num_col, text_col);
+                let (num_col, text_col);
                 if win {
-                    painter.add(theme::shadow(6, 18, Color32::from_rgba_unmultiplied(95, 100, 255, 60)).as_shape(r, 12.0));
-                    theme::gradient_rect(painter, r, 12.0, &self.tex.accent);
-                    (num_bg, num_col, text_col) = (Color32::from_white_alpha(50), Color32::WHITE, Color32::WHITE);
+                    // The result: the one solid accent row.
+                    painter.rect_filled(r, 8.0, p.accent);
+                    painter.hline(r.x_range().shrink(8.0), r.top() + 0.5, Stroke::new(1.0, p.top_light()));
+                    (num_col, text_col) = (theme::alpha(p.on_accent, 190), p.on_accent);
                 } else if active {
-                    painter.rect(r, 12.0, theme::mix(p.card, p.accent, 0.14), Stroke::new(1.5, p.accent), StrokeKind::Inside);
-                    (num_bg, num_col, text_col) = (p.accent, Color32::WHITE, p.text);
+                    painter.rect(r, 8.0, p.raised_hi, Stroke::new(1.0, p.line_hi), StrokeKind::Inside);
+                    (num_col, text_col) = (p.text2, p.text);
                 } else {
-                    let dimmed = self.highlight.is_some() && !spinning;
-                    painter.rect(r, 12.0, p.card, Stroke::new(1.0, p.line), StrokeKind::Inside);
-                    (num_bg, num_col, text_col) = (p.accent_soft, p.accent, if dimmed { p.muted } else { p.text });
+                    painter.rect(r, 8.0, p.card, Stroke::new(1.0, p.line), StrokeKind::Inside);
+                    (num_col, text_col) = (p.muted, if dimmed { p.muted } else { p.text });
                 }
-                let badge = Rect::from_min_size(pos2(r.left() + 12.0, r.center().y - 11.0), vec2(30.0, 22.0));
-                painter.rect_filled(badge, 11.0, num_bg);
-                painter.text(badge.center(), Align2::CENTER_CENTER, (i + 1).to_string(), theme::bold(12.0), num_col);
-                let clip = Rect::from_min_max(pos2(badge.right() + 12.0, r.top()), pos2(r.right() - 12.0, r.bottom()));
-                let font = if win { theme::semi(15.0) } else { theme::reg(14.5) };
+                // Numbers sit in one right-aligned column, names start on one line.
+                painter.text(pos2(r.left() + 36.0, r.center().y), Align2::RIGHT_CENTER, (i + 1).to_string(), theme::mono(12.0), num_col);
+                let clip = Rect::from_min_max(pos2(r.left() + 52.0, r.top()), pos2(r.right() - 12.0, r.bottom()));
+                let font = if win { theme::medium(14.0) } else { theme::reg(14.0) };
                 painter.with_clip_rect(clip).text(pos2(clip.left(), r.center().y), Align2::LEFT_CENTER, name, font, text_col);
                 if active {
                     ui.scroll_to_rect(r, Some(Align::Center));
@@ -536,36 +514,31 @@ impl App {
         ScrollArea::vertical().auto_shrink([false; 2]).show(ui, |ui| {
             ui.set_width(ui.available_width() - 8.0);
 
-            // Panel header, like the brand block in Smart Switcher.
+            // Panel header: the app's flat mark, no tile.
             ui.horizontal(|ui| {
-                theme::logo(ui, 34.0, "⚙", &self.tex);
-                ui.add_space(4.0);
+                theme::mark(ui, 24.0, theme::icon_wheel, p);
                 ui.vertical(|ui| {
-                    ui.add_space(1.0);
-                    ui.label(RichText::new(t.settings).font(theme::semi(15.0)).color(p.text));
-                    ui.add_space(-8.0);
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    ui.label(RichText::new(t.settings).font(theme::medium(14.0)).color(p.text));
                     ui.label(RichText::new("Random Wheel").font(theme::reg(12.0)).color(p.muted));
                 });
             });
-            ui.add_space(14.0);
+            ui.add_space(8.0);
             self.update_banner(ui, p, &ctx);
 
             // ── Participants
             ui.horizontal(|ui| {
-                theme::caps(ui, t.participants, p);
+                theme::section(ui, t.participants, p);
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.label(RichText::new(entries.len().to_string()).font(theme::semi(12.0)).color(p.muted));
+                    theme::meta(ui, &entries.len().to_string(), p);
                 });
             });
-            ui.add_space(2.0);
             self.entries_editor(ui, p, &ctx);
-            ui.add_space(6.0);
 
             ui.horizontal(|ui| {
-                if theme::button(ui, t.browse, Btn::Soft, p).clicked() && self.spin.is_none() {
+                if theme::button(ui, t.browse, Btn::Secondary, p).clicked() && self.spin.is_none() {
                     self.import_file(&ctx);
                 }
-                ui.add_space(2.0);
                 let (txt, col) = match &self.file_label {
                     Some(f) => (f.as_str(), p.text),
                     None => (t.no_file, p.muted),
@@ -573,10 +546,10 @@ impl App {
                 ui.add(egui::Label::new(RichText::new(txt).font(theme::reg(13.0)).color(col)).truncate());
             });
             if let Some(err) = &self.import_error {
-                ui.label(RichText::new(err).font(theme::reg(12.5)).color(theme::hex(0xe5484d)));
+                ui.label(RichText::new(err).font(theme::reg(12.0)).color(p.negative));
             }
             ui.horizontal(|ui| {
-                ui.label(RichText::new(t.file_types).font(theme::reg(12.5)).color(p.muted));
+                theme::hint(ui, t.file_types, p);
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let enabled = self.spin.is_none() && entries.len() > 1;
                     if theme::button(ui, t.sort_az, Btn::Link, p).on_hover_text(t.sort_tip).clicked() && enabled {
@@ -590,47 +563,43 @@ impl App {
 
             // ── Draw
             theme::divider(ui, p);
-            theme::caps(ui, t.draw, p);
-            ui.add_space(2.0);
+            theme::section(ui, t.draw, p);
             ui.label(RichText::new(t.win_text).font(theme::reg(14.0)).color(p.text));
             let r = ui.add(
                 TextEdit::singleline(&mut self.cfg.prompt)
-                    // The party-popper emoji has no glyph in the Linux fallback fonts.
-                    .hint_text(if cfg!(windows) { t.win_hint.to_string() } else { t.win_hint.replace("🎉 ", "") })
+                    .hint_text(t.win_hint)
                     .desired_width(f32::INFINITY)
-                    .margin(Margin::symmetric(12, 9))
+                    .margin(Margin::symmetric(12, 8))
                     .font(theme::reg(14.0)),
             );
             if r.changed() {
                 self.touch(&ctx);
             }
-            ui.add_space(6.0);
+            ui.add_space(4.0);
             ui.horizontal(|ui| {
                 ui.label(RichText::new(t.spin_duration).font(theme::reg(14.0)).color(p.text));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    theme::pill(ui, &t.seconds.replace("{n}", &(self.cfg.spin_secs as i32).to_string()), p);
+                    theme::meta(ui, &t.seconds.replace("{n}", &(self.cfg.spin_secs as i32).to_string()), p);
                 });
             });
             if theme::slider(ui, &mut self.cfg.spin_secs, 2.0, 12.0, 1.0, p).changed() {
                 self.touch(&ctx);
             }
             ui.horizontal(|ui| {
-                ui.label(RichText::new(t.quick).font(theme::reg(12.0)).color(p.muted));
+                theme::hint(ui, t.quick, p);
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.label(RichText::new(t.suspense).font(theme::reg(12.0)).color(p.muted));
+                    theme::hint(ui, t.suspense, p);
                 });
             });
 
             // ── Behavior
             theme::divider(ui, p);
-            theme::caps(ui, t.behavior, p);
-            ui.add_space(2.0);
+            theme::section(ui, t.behavior, p);
             let mut remove = self.cfg.remove_after;
             if switch_row(ui, p, t.remove_after, t.remove_after_hint, &mut remove) {
                 self.cfg.remove_after = remove;
                 self.touch(&ctx);
             }
-            ui.add_space(6.0);
             let mut confetti = self.cfg.confetti;
             if switch_row(ui, p, t.confetti, t.confetti_hint, &mut confetti) {
                 self.cfg.confetti = confetti;
@@ -640,7 +609,7 @@ impl App {
             // ── History
             theme::divider(ui, p);
             ui.horizontal(|ui| {
-                theme::caps(ui, t.history, p);
+                theme::section(ui, t.history, p);
                 if !self.cfg.history.is_empty() {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if theme::button(ui, t.clear_history, Btn::Link, p).clicked() {
@@ -650,12 +619,11 @@ impl App {
                     });
                 }
             });
-            ui.add_space(2.0);
             if self.cfg.history.is_empty() {
                 theme::hint(ui, t.history_empty, p);
             } else {
                 ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+                    ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
                     for (k, name) in self.cfg.history.iter().enumerate() {
                         chip(ui, name, k == 0, p);
                     }
@@ -663,15 +631,13 @@ impl App {
             }
             // ── Interface: language and theme
             theme::divider(ui, p);
-            theme::caps(ui, t.appearance, p);
-            ui.add_space(2.0);
+            theme::section(ui, t.appearance, p);
             let mut lang = self.lang;
             if i18n::language_row(ui, &mut lang, p) {
                 self.lang = lang;
                 self.cfg.language = Some(lang.code().to_string());
                 self.touch(&ctx);
             }
-            ui.add_space(4.0);
             let mut mode = self.cfg.theme;
             if i18n::theme_row(ui, &mut mode, self.lang, p) {
                 self.cfg.theme = mode;
@@ -682,14 +648,12 @@ impl App {
             // ── Updates
             let u = nimvoro::strings(self.lang);
             theme::divider(ui, p);
-            theme::caps(ui, u.updates, p);
-            ui.add_space(2.0);
+            theme::section(ui, u.updates, p);
             let mut check = self.cfg.check_updates;
             if switch_row(ui, p, u.check_on_start, u.check_on_start_hint, &mut check) {
                 self.cfg.check_updates = check;
                 self.touch(&ctx);
             }
-            ui.add_space(4.0);
             ui.horizontal(|ui| {
                 theme::hint(ui, &self.updater.status_text(self.lang), p);
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -703,7 +667,7 @@ impl App {
             // ── Support the author
             theme::divider(ui, p);
             support::support_section(ui, self.lang);
-            ui.add_space(10.0);
+            ui.add_space(8.0);
         });
     }
 
@@ -711,27 +675,23 @@ impl App {
     fn update_banner(&mut self, ui: &mut Ui, p: &Pal, ctx: &egui::Context) {
         let UpdateState::Available { version, .. } = self.updater.state() else { return };
         let u = nimvoro::strings(self.lang);
-        Frame::new()
-            .fill(p.accent_soft)
-            .corner_radius(10.0)
-            .inner_margin(Margin::symmetric(12, 10))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.horizontal(|ui| {
-                    ui.vertical(|ui| {
-                        ui.label(RichText::new(u.available.replace("{v}", &version)).font(theme::semi(13.5)).color(p.text));
-                        ui.add_space(-6.0);
-                        theme::hint(ui, &u.you_have.replace("{v}", self.updater.current), p);
-                    });
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if theme::button(ui, u.update_btn, Btn::Soft, p).clicked() && self.updater.apply() {
-                            self.cfg.save();
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        }
-                    });
+        theme::card(p).inner_margin(Margin::same(12)).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    ui.label(RichText::new(u.available.replace("{v}", &version)).font(theme::medium(14.0)).color(p.text));
+                    theme::hint(ui, &u.you_have.replace("{v}", self.updater.current), p);
+                });
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if theme::button(ui, u.update_btn, Btn::Primary, p).clicked() && self.updater.apply() {
+                        self.cfg.save();
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
                 });
             });
-        ui.add_space(12.0);
+        });
+        ui.add_space(8.0);
     }
 
     /// Multi-line participants field with a Clear button in the corner.
@@ -739,26 +699,21 @@ impl App {
         let enabled = self.spin.is_none() && self.outcome.is_none();
         let hint = self.s().entries_hint;
         let mut te_resp = None;
-        let frame = Frame::new()
-            .fill(p.bg)
-            .stroke(Stroke::new(1.0, p.line))
-            .corner_radius(10)
-            .inner_margin(Margin { left: 12, right: 8, top: 8, bottom: 8 })
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ScrollArea::vertical().id_salt("entries").min_scrolled_height(200.0).max_height(200.0).show(ui, |ui| {
-                    let r = ui.add_enabled(
-                        enabled,
-                        TextEdit::multiline(&mut self.cfg.text)
-                            .frame(Frame::NONE)
-                            .hint_text(hint)
-                            .desired_width(f32::INFINITY)
-                            .desired_rows(9)
-                            .font(theme::reg(14.5)),
-                    );
-                    te_resp = Some(r);
-                });
+        let frame = theme::field_frame(p).inner_margin(Margin { left: 12, right: 8, top: 8, bottom: 8 }).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ScrollArea::vertical().id_salt("entries").min_scrolled_height(200.0).max_height(200.0).show(ui, |ui| {
+                let r = ui.add_enabled(
+                    enabled,
+                    TextEdit::multiline(&mut self.cfg.text)
+                        .frame(Frame::NONE)
+                        .hint_text(hint)
+                        .desired_width(f32::INFINITY)
+                        .desired_rows(9)
+                        .font(theme::reg(14.0)),
+                );
+                te_resp = Some(r);
             });
+        });
         let rect = frame.response.rect;
         if let Some(r) = &te_resp {
             if r.changed() {
@@ -766,14 +721,16 @@ impl App {
                 self.touch(ctx);
             }
             if r.has_focus() {
-                ui.painter().rect_stroke(rect.expand(1.5), 11.5, Stroke::new(3.0, p.accent_soft), StrokeKind::Outside);
-                ui.painter().rect_stroke(rect, 10.0, Stroke::new(1.0, p.accent), StrokeKind::Inside);
+                // Focus: a 2px accent ring, 2px off the field.
+                ui.painter().rect_stroke(rect.expand(2.0), 10.0, Stroke::new(2.0, p.accent), StrokeKind::Outside);
             }
         }
         if !self.cfg.text.trim().is_empty() && enabled {
-            let size = vec2(72.0, 24.0);
-            let br = Rect::from_min_size(pos2(rect.right() - size.x - 14.0, rect.top() + 8.0), size);
-            if theme::button_at(ui, br, Id::unique("clear"), self.s().clear, Btn::Small, p).clicked() {
+            let label = self.s().clear;
+            let tw = ui.painter().layout_no_wrap(label.to_string(), theme::medium(12.0), p.text).size().x;
+            let size = vec2(tw + 16.0, 28.0);
+            let br = Rect::from_min_size(pos2(rect.right() - size.x - 16.0, rect.top() + 8.0), size);
+            if theme::button_at(ui, br, Id::unique("clear"), label, Btn::Small, p).clicked() {
                 self.cfg.text.clear();
                 self.highlight = None;
                 self.file_label = None;
@@ -807,26 +764,18 @@ impl App {
 
         egui::Area::new(Id::unique("winner"))
             .order(Order::Tooltip)
-            .anchor(Align2::CENTER_CENTER, vec2(0.0, (1.0 - e) * 24.0))
+            .anchor(Align2::CENTER_CENTER, vec2(0.0, (1.0 - e) * 8.0))
             .show(ctx, |ui| {
                 ui.multiply_opacity(e);
                 Frame::new()
                     .fill(p.card)
-                    .stroke(Stroke::new(1.0, p.line))
-                    .corner_radius(20)
-                    .inner_margin(Margin::symmetric(32, 28))
-                    .shadow(theme::shadow(20, 60, Color32::from_black_alpha(90)))
+                    .stroke(Stroke::new(1.0, p.line_hi))
+                    .corner_radius(16)
+                    .inner_margin(Margin::symmetric(32, 32))
+                    .shadow(theme::shadow_for(p))
                     .show(ui, |ui| {
-                        ui.set_width(380.0);
+                        ui.set_width(360.0);
                         ui.vertical_centered(|ui| {
-                            // Medal badge.
-                            let (r, _) = ui.allocate_exact_size(Vec2::splat(64.0), Sense::hover());
-                            let painter = ui.painter();
-                            painter.add(theme::shadow(6, 20, Color32::from_rgba_unmultiplied(95, 100, 255, 90)).as_shape(r, 32.0));
-                            theme::gradient_rect(painter, r, 32.0, &self.tex.accent);
-                            painter.text(r.center(), Align2::CENTER_CENTER, "★", theme::bold(30.0), Color32::WHITE);
-                            ui.add_space(10.0);
-
                             let prompt = if dbd {
                                 self.d().your_killer
                             } else if self.cfg.prompt.trim().is_empty() {
@@ -834,30 +783,28 @@ impl App {
                             } else {
                                 self.cfg.prompt.trim()
                             };
-                            ui.label(RichText::new(prompt).font(theme::reg(15.0)).color(p.muted));
-                            ui.add_space(2.0);
-                            ui.add(egui::Label::new(RichText::new(&name).font(theme::bold(34.0)).color(p.accent)).wrap());
+                            ui.label(RichText::new(prompt).font(theme::reg(14.0)).color(p.text2));
+                            ui.add(egui::Label::new(RichText::new(&name).font(theme::medium(32.0)).color(p.accent)).wrap());
                             if self.cfg.remove_after && !dbd {
-                                ui.add_space(2.0);
                                 theme::hint(ui, t.will_be_removed, p);
                             }
-                            ui.add_space(18.0);
+                            ui.add_space(16.0);
 
-                            let h = 42.0;
+                            let h = 36.0;
                             let single = self.cfg.remove_after || dbd;
-                            let total = if single { 180.0 } else { 370.0 };
+                            let total = if single { 176.0 } else { 360.0 };
                             let (row, _) = ui.allocate_exact_size(vec2(total, h), Sense::hover());
                             let done_rect = if single {
                                 row
                             } else {
-                                let ghost = Rect::from_min_size(row.min, vec2(180.0, h));
-                                if theme::button_at(ui, ghost, Id::unique("w-remove"), t.remove_from_list, Btn::Ghost, p).clicked() {
+                                let secondary = Rect::from_min_size(row.min, vec2(176.0, h));
+                                if theme::button_at(ui, secondary, Id::unique("w-remove"), t.remove_from_list, Btn::Secondary, p).clicked() {
                                     remove = true;
                                     close = true;
                                 }
-                                Rect::from_min_max(pos2(row.right() - 180.0, row.top()), row.max)
+                                Rect::from_min_max(pos2(row.right() - 176.0, row.top()), row.max)
                             };
-                            if theme::gradient_button(ui, done_rect, Id::unique("w-done"), t.done, None, true, &self.tex, p).clicked() {
+                            if theme::button_at(ui, done_rect, Id::unique("w-done"), t.done, Btn::Primary, p).clicked() {
                                 close = true;
                             }
                         });
@@ -875,9 +822,9 @@ fn switch_row(ui: &mut Ui, p: &Pal, title: &str, hint: &str, value: &mut bool) -
     let w = ui.available_width();
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
-            ui.set_width(w - 58.0);
+            ui.set_width(w - 56.0);
+            ui.spacing_mut().item_spacing.y = 2.0;
             ui.label(RichText::new(title).font(theme::reg(14.0)).color(p.text));
-            ui.add_space(-6.0);
             theme::hint(ui, hint, p);
         });
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -888,14 +835,13 @@ fn switch_row(ui: &mut Ui, p: &Pal, title: &str, hint: &str, value: &mut bool) -
 }
 
 fn chip(ui: &mut Ui, text: &str, latest: bool, p: &Pal) {
-    let font = theme::reg(13.0);
-    let g = ui.painter().layout_no_wrap(text.to_string(), font, if latest { p.accent } else { p.text });
-    let w = (g.size().x + 22.0).min(ui.available_width().max(60.0));
-    let (r, _) = ui.allocate_exact_size(vec2(w, 26.0), Sense::hover());
-    let (fill, stroke) = if latest { (p.accent_soft, Stroke::NONE) } else { (p.bg, Stroke::new(1.0, p.line)) };
-    ui.painter().rect(r, 13.0, fill, stroke, StrokeKind::Inside);
-    let clip = r.shrink2(vec2(11.0, 0.0));
-    ui.painter().with_clip_rect(clip).galley(pos2(clip.left(), r.center().y - g.size().y / 2.0), g, p.text);
+    let col = if latest { p.text } else { p.text2 };
+    let g = ui.painter().layout_no_wrap(text.to_string(), theme::reg(13.0), col);
+    let w = (g.size().x + 24.0).min(ui.available_width().max(64.0));
+    let (r, _) = ui.allocate_exact_size(vec2(w, 28.0), Sense::hover());
+    ui.painter().rect(r, 8.0, p.raised, Stroke::new(1.0, if latest { p.line_hi } else { p.line }), StrokeKind::Inside);
+    let clip = r.shrink2(vec2(12.0, 0.0));
+    ui.painter().with_clip_rect(clip).galley(pos2(clip.left(), r.center().y - g.size().y / 2.0), g, col);
 }
 
 impl eframe::App for App {
@@ -952,11 +898,14 @@ impl eframe::App for App {
 
         let dbd_tab = self.cfg.tab == Tab::Dbd;
         if !self.focus_mode {
-            egui::Panel::right("settings")
-                .exact_size(if dbd_tab { 380.0 } else { 340.0 })
+            let panel = egui::Panel::right("settings")
+                .exact_size(if dbd_tab { 384.0 } else { 336.0 })
                 .resizable(false)
-                .frame(Frame::new().fill(p.sidebar).inner_margin(Margin { left: 22, right: 12, top: 22, bottom: 12 }))
+                .frame(Frame::new().fill(p.sidebar).inner_margin(Margin { left: 24, right: 16, top: 24, bottom: 16 }))
                 .show(ui, |ui| if dbd_tab { self.dbd_panel(ui, &p) } else { self.settings_panel(ui, &p, &entries) });
+            // Hairline between the page and the panel.
+            let edge = panel.response.rect;
+            ui.painter().vline(edge.left() + 0.5, edge.y_range(), Stroke::new(1.0, p.line));
         }
         egui::CentralPanel::default()
             .frame(Frame::new().fill(p.bg).inner_margin(Margin::symmetric(32, 24)))
@@ -973,6 +922,32 @@ impl Drop for App {
     fn drop(&mut self) {
         if self.dirty_since.is_some() {
             self.cfg.save();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accent_is_readable_in_both_themes() {
+        let a = ACCENT;
+        for (name, fill, on, surfaces) in [
+            ("dark", a.dark, a.on_dark, [theme::Pal::dark().sidebar, theme::Pal::dark().bg, theme::Pal::dark().card]),
+            ("light", a.light, a.on_light, [theme::Pal::light().sidebar, theme::Pal::light().bg, theme::Pal::light().card]),
+        ] {
+            assert!(theme::contrast(on, fill) >= 4.5, "{name}: on_accent on accent");
+            for s in surfaces {
+                assert!(theme::contrast(fill, s) >= 4.5, "{name}: accent text on a surface");
+            }
+        }
+    }
+
+    #[test]
+    fn wheel_labels_are_readable_on_every_segment() {
+        for c in wheel::SEGMENTS {
+            assert!(theme::contrast(Color32::WHITE, c) >= 4.0);
         }
     }
 }

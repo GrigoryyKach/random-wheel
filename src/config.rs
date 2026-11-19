@@ -58,8 +58,16 @@ impl Default for Config {
     }
 }
 
+/// The settings folder. `RANDOM_WHEEL_DATA_DIR` overrides it (tests and screenshots never touch the real one).
+pub fn data_dir() -> Option<PathBuf> {
+    match std::env::var_os("RANDOM_WHEEL_DATA_DIR") {
+        Some(d) if !d.is_empty() => Some(PathBuf::from(d)),
+        _ => dirs::config_dir().map(|d| d.join("Random Wheel")),
+    }
+}
+
 fn path() -> Option<PathBuf> {
-    dirs::config_dir().map(|d| d.join("Random Wheel").join("config.json"))
+    data_dir().map(|d| d.join("config.json"))
 }
 
 impl Config {

@@ -3,8 +3,8 @@
 A wheel of fortune for Windows and Linux: type the participants in the panel on the right, press "Spin the wheel", and the app picks a winner.
 Written in Rust (eframe/egui): a single executable with no dependencies that works offline.
 
-The look follows Smart Switcher: the same light and dark palettes, the brand gradient `#4f6bff → #8a5bff`,
-Segoe UI on Windows (the bundled font on Linux), cards, switches and capitalised section headings.
+The look is the NIMVORO suite base: a graphite ramp in light and dark, IBM Plex Sans and Plex Mono (bundled, Latin and Cyrillic subset, SIL Open Font License, see `assets/fonts/OFL.txt`), hairlines instead of shadows, and one vermilion accent that matches the wheel pointer.
+The wheel itself is the only coloured object: twelve evenly lit colours, a rim with a peg at every segment border, and a solid pointer.
 
 ## Languages
 
@@ -37,7 +37,7 @@ sudo apt install build-essential pkg-config libxkbcommon-dev libwayland-dev libx
 cargo build --release
 ```
 
-Known limitations: on Wayland the window is positioned by the compositor (the "centered" hint is ignored); some systems lack an emoji font, so the emoji in the winner message may show as a box.
+Known limitations: on Wayland the window is positioned by the compositor (the "centered" hint is ignored).
 
 ## Features
 
@@ -89,7 +89,7 @@ The animation only brings the wheel to the chosen segment; the stopping point in
 
 ## Where settings are stored
 
-`%APPDATA%\Random Wheel\config.json` on Windows, `~/.config/Random Wheel/config.json` on Linux: participants, settings, language, theme and history. Saved automatically.
+`%APPDATA%\Random Wheel\config.json` on Windows, `~/.config/Random Wheel/config.json` on Linux: participants, settings, language, theme and history. Saved automatically. The folder can be moved with the `RANDOM_WHEEL_DATA_DIR` environment variable.
 
 ## Layout
 

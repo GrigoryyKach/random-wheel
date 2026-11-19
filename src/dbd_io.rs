@@ -13,7 +13,7 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const LIST_URL: &str = "https://raw.githubusercontent.com/GrigoryyKach/random-wheel/main/data/dbd_killers.json";
 
 fn dir() -> Option<PathBuf> {
-    dirs::config_dir().map(|d| d.join("Random Wheel"))
+    crate::config::data_dir()
 }
 
 fn state_path() -> Option<PathBuf> {

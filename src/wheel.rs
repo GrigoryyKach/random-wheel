@@ -1,23 +1,26 @@
 //! The wheel: random number generator, rotation maths and painting.
 
 use crate::theme::{self, Pal, hex, mix};
-use eframe::egui::{Align2, Color32, Mesh, Painter, Pos2, Shape, Stroke, epaint::TextShape, pos2, vec2};
+use eframe::egui::{Align2, Color32, Painter, Pos2, Shape, Stroke, epaint::TextShape, pos2, vec2};
 use std::f32::consts::{FRAC_PI_2, TAU};
 use std::hash::{BuildHasher, Hasher};
 
-/// Segment colours.
-pub const SEGMENTS: [Color32; 11] = [
-    hex(0x6366f1),
-    hex(0x8b5cf6),
-    hex(0xa855f7),
-    hex(0xec4899),
-    hex(0xf43f5e),
-    hex(0xf97316),
-    hex(0xf59e0b),
-    hex(0x10b981),
-    hex(0x14b8a6),
-    hex(0x0ea5e9),
-    hex(0x3b82f6),
+/// Segment colours: twelve steps of one lightness (OKLCH L 0.56, C 0.12 or the most the gamut allows),
+/// hues 30 degrees apart starting at the app accent. They are stored in drawing order, a stride of five
+/// steps (150 degrees), so neighbouring segments never look alike. White labels reach 4.4:1 on all of them.
+pub const SEGMENTS: [Color32; 12] = [
+    hex(0xb05647),
+    hex(0x058778),
+    hex(0x9c5894),
+    hex(0x6a7f20),
+    hex(0x5b6fbb),
+    hex(0xa66119),
+    hex(0x078394),
+    hex(0xac5370),
+    hex(0x33884f),
+    hex(0x8162af),
+    hex(0x8d7102),
+    hex(0x1d7cb4),
 ];
 
 /// Segment colour: neighbouring segments (including last and first) never match.
@@ -25,7 +28,8 @@ pub fn segment_color(i: usize, n: usize) -> Color32 {
     let k = SEGMENTS.len();
     let mut idx = i % k;
     if n > 1 && i == n - 1 && idx == 0 {
-        idx = k / 2;
+        // The last segment would repeat the first: take a colour far from both neighbours.
+        idx = 3;
     }
     SEGMENTS[idx]
 }
@@ -99,25 +103,8 @@ fn dir(a: f32) -> eframe::egui::Vec2 {
     vec2(a.cos(), a.sin())
 }
 
-/// Soft glow around the wheel: a ring fading from `color` to transparent.
-fn glow(painter: &Painter, c: Pos2, r0: f32, r1: f32, color: Color32) {
-    let mut mesh = Mesh::default();
-    let steps = 96;
-    for k in 0..=steps {
-        let a = k as f32 / steps as f32 * TAU;
-        mesh.colored_vertex(c + dir(a) * r0, color);
-        mesh.colored_vertex(c + dir(a) * r1, Color32::TRANSPARENT);
-    }
-    for k in 0..steps {
-        let i = (k * 2) as u32;
-        mesh.add_triangle(i, i + 1, i + 2);
-        mesh.add_triangle(i + 1, i + 3, i + 2);
-    }
-    painter.add(Shape::mesh(mesh));
-}
-
 fn fit_label(painter: &Painter, name: &str, size: f32, max_w: f32, color: Color32) -> std::sync::Arc<eframe::egui::Galley> {
-    let font = theme::semi(size);
+    let font = theme::medium(size);
     let g = painter.layout_no_wrap(name.to_string(), font.clone(), color);
     if g.size().x <= max_w {
         return g;
@@ -142,16 +129,25 @@ pub struct WheelState<'a> {
     pub empty_text: &'a str,
 }
 
+/// Width of the wooden rim for a wheel of outer radius `r`.
+fn rim_width(r: f32) -> f32 {
+    (r * 0.04).clamp(8.0, 16.0)
+}
+
+/// The wheel: a flat rim with a peg at every segment border, the segments, a fixed pointer and a hub.
+/// `r` is the outer radius (rim included). No glow: the wheel is the one coloured object on the page.
 pub fn paint(painter: &Painter, c: Pos2, r: f32, st: &WheelState, p: &Pal) {
     let n = st.entries.len();
-    let glow_a = if p.dark { 70 } else { 45 };
-    glow(painter, c + vec2(0.0, 6.0), r - 4.0, r + 34.0, Color32::from_rgba_unmultiplied(95, 100, 255, glow_a));
+    let rim = rim_width(r);
+    let rr = r - rim;
+    painter.circle_filled(c, r, p.raised);
+    painter.circle_stroke(c, r - 0.5, Stroke::new(1.0, p.line_hi));
 
     if n == 0 {
-        painter.circle_filled(c, r, p.card);
-        painter.circle_stroke(c, r, Stroke::new(1.0, p.line));
-        painter.text(c + vec2(0.0, r * 0.32), Align2::CENTER_CENTER, st.empty_text, theme::reg(15.0), p.muted);
-        paint_pointer(painter, c, r, 0.0, p);
+        painter.circle_filled(c, rr, p.card);
+        painter.circle_stroke(c, rr, Stroke::new(1.0, p.line));
+        painter.text(c + vec2(0.0, rr * 0.32), Align2::CENTER_CENTER, st.empty_text, theme::reg(14.0), p.muted);
+        paint_pointer(painter, c, r, rim, 0.0, p);
         paint_hub(painter, c, r, p);
         return;
     }
@@ -164,7 +160,7 @@ pub fn paint(painter: &Painter, c: Pos2, r: f32, st: &WheelState, p: &Pal) {
     };
 
     if n == 1 {
-        painter.circle_filled(c, r, dim(0, segment_color(0, 1)));
+        painter.circle_filled(c, rr, dim(0, segment_color(0, 1)));
     } else {
         let steps = ((s / TAU) * 220.0).ceil().max(2.0) as usize;
         for i in 0..n {
@@ -172,26 +168,33 @@ pub fn paint(painter: &Painter, c: Pos2, r: f32, st: &WheelState, p: &Pal) {
             let mut pts = Vec::with_capacity(steps + 2);
             pts.push(c);
             for k in 0..=steps {
-                pts.push(c + dir(a0 + s * k as f32 / steps as f32) * r);
+                pts.push(c + dir(a0 + s * k as f32 / steps as f32) * rr);
             }
             painter.add(Shape::convex_polygon(pts, dim(i, segment_color(i, n)), Stroke::NONE));
         }
         if n <= 120 {
-            let sep = Stroke::new(1.2, Color32::from_white_alpha(70));
+            let sep = Stroke::new(2.0, p.bg);
             for i in 0..n {
-                painter.line_segment([c, c + dir(start + i as f32 * s) * r], sep);
+                painter.line_segment([c, c + dir(start + i as f32 * s) * rr], sep);
+            }
+        }
+        // Pegs on the rim, one per border: what the pointer ticks against.
+        if n <= 60 {
+            let pr = (rim * 0.26).clamp(2.0, 3.5);
+            for i in 0..n {
+                painter.circle_filled(c + dir(start + i as f32 * s) * (rr + rim / 2.0), pr, p.text2);
             }
         }
     }
 
     // Labels: along the radius, pushed to the rim.
-    let label_r = r * 0.9;
-    let max_w = r * 0.66;
-    let chord = 2.0 * (r * 0.62) * (s / 2.0).min(FRAC_PI_2).sin();
-    let size = (chord * 0.5).min(r * 0.085).clamp(0.0, 24.0);
+    let label_r = rr * 0.94;
+    let max_w = rr * 0.7;
+    let chord = 2.0 * (rr * 0.62) * (s / 2.0).min(FRAC_PI_2).sin();
+    let size = (chord * 0.5).min(rr * 0.085).clamp(0.0, 24.0);
     if n == 1 {
-        let g = fit_label(painter, &st.entries[0], (r * 0.09).clamp(13.0, 26.0), r * 1.4, Color32::WHITE);
-        painter.galley(c + vec2(-g.size().x / 2.0, -r * 0.5 - g.size().y / 2.0), g, Color32::WHITE);
+        let g = fit_label(painter, &st.entries[0], (rr * 0.09).clamp(13.0, 26.0), rr * 1.4, Color32::WHITE);
+        painter.galley(c + vec2(-g.size().x / 2.0, -rr * 0.5 - g.size().y / 2.0), g, Color32::WHITE);
     } else if size >= 9.0 {
         for (i, name) in st.entries.iter().enumerate() {
             let a = start + (i as f32 + 0.5) * s;
@@ -214,36 +217,31 @@ pub fn paint(painter: &Painter, c: Pos2, r: f32, st: &WheelState, p: &Pal) {
         let steps = ((s / TAU) * 220.0).ceil().max(2.0) as usize;
         let mut pts = vec![c];
         for k in 0..=steps {
-            pts.push(c + dir(a0 + s * k as f32 / steps as f32) * (r - 1.5));
+            pts.push(c + dir(a0 + s * k as f32 / steps as f32) * (rr - 1.0));
         }
-        painter.add(Shape::closed_line(pts, Stroke::new(3.0, Color32::from_white_alpha(230))));
+        painter.add(Shape::closed_line(pts, Stroke::new(2.0, p.text)));
     }
 
-    painter.circle_stroke(c, r, Stroke::new(3.0, Color32::from_white_alpha(if p.dark { 210 } else { 255 })));
-    painter.circle_stroke(c, r + 1.5, Stroke::new(1.0, Color32::from_black_alpha(if p.dark { 60 } else { 20 })));
-    paint_pointer(painter, c, r, st.kick, p);
+    paint_pointer(painter, c, r, rim, st.kick, p);
     paint_hub(painter, c, r, p);
 }
 
-fn paint_pointer(painter: &Painter, c: Pos2, r: f32, kick: f32, p: &Pal) {
+/// The pointer: a solid accent flapper on a pivot above the rim. It is the only place the accent
+/// appears on the wheel. A page-coloured edge separates it from the segments, with no shadow.
+fn paint_pointer(painter: &Painter, c: Pos2, r: f32, rim: f32, kick: f32, p: &Pal) {
     let size = (r * 0.06).clamp(12.0, 20.0);
-    let pivot = pos2(c.x, c.y - r - size * 0.55);
+    let pivot = pos2(c.x, c.y - r - size * 0.55 + rim * 0.2);
     let rot = |v: eframe::egui::Vec2| {
         let (s, co) = kick.sin_cos();
         pivot + vec2(v.x * co - v.y * s, v.x * s + v.y * co)
     };
     let pts = [vec2(-size, -size * 0.35), vec2(size, -size * 0.35), vec2(0.0, size * 1.45)];
-    let shadow: Vec<Pos2> = pts.iter().map(|&v| rot(v) + vec2(0.0, 2.5)).collect();
-    painter.add(Shape::convex_polygon(shadow, Color32::from_black_alpha(70), Stroke::NONE));
     let body: Vec<Pos2> = pts.iter().map(|&v| rot(v)).collect();
-    painter.add(Shape::convex_polygon(body, p.accent, Stroke::new(2.0, Color32::WHITE)));
+    painter.add(Shape::convex_polygon(body, p.accent, Stroke::new(2.0, p.bg)));
 }
 
 fn paint_hub(painter: &Painter, c: Pos2, r: f32, p: &Pal) {
-    let h = (r * 0.045).clamp(9.0, 18.0);
-    painter.circle_filled(c + vec2(0.0, 2.0), h + 4.0, Color32::from_black_alpha(60));
-    painter.circle_filled(c, h + 3.0, Color32::WHITE);
-    painter.circle_filled(c, h, p.accent2);
-    painter.circle_filled(c + vec2(-h * 0.15, -h * 0.15), h * 0.7, mix(p.accent2, p.accent, 0.8));
-    painter.circle_filled(c + vec2(-h * 0.35, -h * 0.35), h * 0.28, Color32::from_white_alpha(110));
+    let h = (r * 0.04).clamp(8.0, 16.0);
+    painter.circle_filled(c, h + 3.0, p.bg);
+    painter.circle_filled(c, h, p.text);
 }
