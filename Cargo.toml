@@ -1,6 +1,6 @@
 [package]
 name = "random_wheel"
-version = "1.5.0"
+version = "1.5.1"
 edition = "2024"
 build = "build.rs"
 description = "Wheel of fortune: pick a random participant"
