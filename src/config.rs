@@ -80,13 +80,15 @@ impl Config {
         cfg
     }
 
-    pub fn save(&self) {
-        let Some(p) = path() else { return };
+    /// Writes the settings. `false` if they could not be written.
+    pub fn save(&self) -> bool {
+        let Some(p) = path() else { return true };
         if let Some(dir) = p.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
-        if let Ok(json) = serde_json::to_string_pretty(self) {
-            let _ = std::fs::write(p, json);
+        match serde_json::to_string_pretty(self) {
+            Ok(json) => std::fs::write(p, json).is_ok(),
+            Err(_) => false,
         }
     }
 }

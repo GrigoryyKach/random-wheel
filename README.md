@@ -106,6 +106,8 @@ src/wheel.rs    random number generator, rotation maths, wheel painting
 src/theme.rs    shared: light/dark palette, theme mode, widgets, icons
 src/i18n.rs     shared: language, string tables, plurals, language/theme rows
 src/nimvoro.rs  shared: update check and hand-off to the launcher
+src/selfupdate.rs  shared: self-update without the launcher (download, SHA-256, swap, restart)
+src/update_ui.rs  shared: self-update progress bar
 src/import.rs   reading .txt/.csv and detecting the encoding
 src/config.rs   config.json
 ```
@@ -128,6 +130,8 @@ On startup the app checks the latest [release](https://github.com/GrigoryyKach/r
 If a new version exists, the "Update" button hands the update to the launcher, or opens the release page when there is no launcher.
 
 A release is built by GitHub Actions when a tag is pushed (a Windows job and a Linux job, one release with both assets): bump the version in `Cargo.toml`, then `git tag v{version} && git push --tags`.
+
+Without the launcher, the **Update** button updates the app by itself: it downloads the release archive from GitHub, checks its SHA-256 against the digest GitHub publishes for the asset, swaps the files (the old ones become `*.old`, are removed on the next start, and any failure rolls back) and restarts. If the app folder is not writable, the release page opens instead. Settings and the launcher language marker are never replaced.
 
 ## Support
 

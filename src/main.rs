@@ -8,14 +8,17 @@ mod dbd_strings;
 mod i18n;
 mod import;
 mod nimvoro;
+mod selfupdate;
 mod strings;
 mod support;
 mod theme;
+mod update_ui;
 mod wheel;
 
 use eframe::egui;
 
 fn main() -> eframe::Result<()> {
+    selfupdate::startup("random-wheel");
     let cfg = config::Config::load();
     let viewport = egui::ViewportBuilder::default()
         .with_title("Random Wheel")

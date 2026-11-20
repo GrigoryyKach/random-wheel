@@ -10,6 +10,7 @@ use crate::config::{Config, Tab, View};
 use crate::i18n::{self, Lang};
 use crate::nimvoro::{self, UpdateState, Updater};
 use crate::support;
+use crate::update_ui;
 use crate::strings::{self, S};
 use crate::theme::{self, Btn, Pal, Seg};
 use crate::wheel::{self, Rng, WheelState};
@@ -677,6 +678,9 @@ impl App {
         let u = nimvoro::strings(self.lang);
         theme::card(p).inner_margin(Margin::same(12)).show(ui, |ui| {
             ui.set_width(ui.available_width());
+            if update_ui::progress(ui, &self.updater, self.lang, p) {
+                return;
+            }
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 0.0;
@@ -684,9 +688,11 @@ impl App {
                     theme::hint(ui, &u.you_have.replace("{v}", self.updater.current), p);
                 });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if theme::button(ui, u.update_btn, Btn::Primary, p).clicked() && self.updater.apply() {
-                        self.cfg.save();
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    if theme::button(ui, u.update_btn, Btn::Primary, p).clicked() {
+                        let saved = self.cfg.save();
+                        if self.updater.apply_if(saved) {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        }
                     }
                 });
             });
@@ -846,6 +852,14 @@ fn chip(ui: &mut Ui, text: &str, latest: bool, p: &Pal) {
 
 impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if self.updater.is_busy() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
+        // A self-update has started the new version: save and close by the normal path.
+        if self.updater.should_exit() {
+            self.cfg.save();
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
         let now = ctx.input(|i| i.time);
         let dt = ctx.input(|i| i.stable_dt).min(0.05);
 
